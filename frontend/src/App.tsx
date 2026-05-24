@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { UrlInput } from "./components/UrlInput";
 import { ProgressBar } from "./components/ProgressBar";
 import { ChatPanel } from "./components/ChatPanel";
+import { KbViewer } from "./components/KbViewer";
 
 const API_BASE = "http://localhost:8080";
 
@@ -11,6 +12,8 @@ function App() {
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [kb, setKb] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<"chat" | "kb">("chat");
 
   // Poll job status
   useEffect(() => {
@@ -30,6 +33,8 @@ function App() {
 
         if (data.status === "ready") {
           setIsLoading(false);
+          setKb(data.kb);
+          setViewMode("kb");
           clearInterval(interval);
         } else if (data.status === "failed") {
           setIsLoading(false);
@@ -106,10 +111,49 @@ function App() {
             </div>
           </div>
 
-          {/* Quick Stats / Info badge */}
-          <div className="hidden sm:flex items-center gap-2 bg-white/5 border border-white/5 px-3 py-1.5 rounded-xl text-xs text-gray-400 font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-            Gemini 2.5 Flash Online
+          {/* Header Controls */}
+          <div className="flex items-center gap-4">
+            {/* Mode Switcher */}
+            <div className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-xl p-1">
+              <button
+                onClick={() => setViewMode("chat")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all duration-300 flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === "chat"
+                    ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span>Chat Agent</span>
+              </button>
+              <button
+                onClick={() => setViewMode("kb")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all duration-300 flex items-center gap-1.5 relative cursor-pointer ${
+                  viewMode === "kb"
+                    ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                <span>Knowledge Base</span>
+                {kb && (
+                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Quick Stats / Info badge */}
+            <div className="hidden sm:flex items-center gap-2 bg-white/5 border border-white/5 px-3 py-1.5 rounded-xl text-xs text-gray-400 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+              Gemini 2.5 Flash Online
+            </div>
           </div>
         </div>
       </header>
@@ -123,19 +167,25 @@ function App() {
         {/* Step 2: Glowing Progress Indicator */}
         <ProgressBar status={status} progress={progress} error={error} />
 
-        {/* Step 3: High-Fidelity Split Screen Chat Demonstration */}
-        <section className="flex-1 flex flex-col lg:flex-row gap-6 mt-4">
-          <ChatPanel
-            jobId={jobId}
-            useKb={false}
-            label="Without KB"
-          />
-          <ChatPanel
-            jobId={jobId}
-            useKb={true}
-            label="With KB — SiteIntel"
-          />
-        </section>
+        {/* Step 3: High-Fidelity Views (Chat Panel / Knowledge Base) */}
+        {viewMode === "chat" ? (
+          <section className="flex-1 flex flex-col lg:flex-row gap-6 mt-4 animate-fadeIn">
+            <ChatPanel
+              jobId={jobId}
+              useKb={false}
+              label="Without KB"
+            />
+            <ChatPanel
+              jobId={jobId}
+              useKb={true}
+              label="With KB — SiteIntel"
+            />
+          </section>
+        ) : (
+          <section className="flex-1 flex flex-col mt-4 animate-fadeIn">
+            <KbViewer kb={kb} />
+          </section>
+        )}
       </main>
 
       {/* Footer footer */}
