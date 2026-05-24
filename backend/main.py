@@ -2,8 +2,8 @@ import os
 import uuid
 import json
 import asyncio
-from urllib.parse import urljoin
-from fastapi import FastAPI, BackgroundTasks
+from urllib.parse import urljoin, parse_qs
+from fastapi import FastAPI, BackgroundTasks, Request, Response
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -304,6 +304,155 @@ async def chat_endpoint(req: ChatRequest):
             job[history_key] = job[history_key][-6:]
             
     return StreamingResponse(chat_wrapper(), media_type="text/plain")
+
+def clean_for_speech(text: str) -> str:
+    import re
+    # Strip markdown symbols, headers, citations, and brackets for synthetic reading
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"\*([^*]+)\*", r"\1", text)
+    text = re.sub(r"\[Source:\s*[^\]]+\]", "", text)
+    text = re.sub(r"#[#\s\w]+", "", text)
+    text = re.sub(r"-\s+", "", text)
+    text = text.replace("\n", " ")
+    # Replace multiple spaces with a single space
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+async def get_voice_response(message: str, system_prompt: str, site_url: str = None, history: list = None) -> str:
+    if site_url:
+        chunks = search(message, site_url=site_url, n=3)
+        context = "\n\n".join(
+            f"[Source: {c['source_url']}]\n{c['text']}" for c in chunks
+        )
+        system = (
+            f"{system_prompt}\n\n"
+            f"CONTEXT:\n{context}\n\n"
+            f"Answer the user's question. Guidelines:\n"
+            f"1. Be extremely concise, direct, and conversational. This is a real-time voice call.\n"
+            f"2. Keep the answer to 1 to 3 sentences maximum.\n"
+            f"3. Never output lists, bullet points, asterisks, markdown, or text citations like '[Source: ...]'.\n"
+            f"4. If the answer is not in the context, say: 'I apologize, but I do not have that information in my knowledge base. How else can I assist you?'"
+        )
+    else:
+        system = "You are a helpful voice assistant. Keep answers to 1-2 concise sentences."
+
+    provider, client = get_chat_client()
+    history_list = history or []
+    
+    if provider == "groq":
+        try:
+            messages = [{"role": "system", "content": system}]
+            messages.extend(history_list)
+            messages.append({"role": "user", "content": message})
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=messages,
+                    stream=False
+                )
+            )
+            return response.choices[0].message.content or ""
+        except Exception as e:
+            print(f"Groq API error during voice response: {e}")
+            return "I am sorry, I had trouble connecting to my brain. Can you repeat that?"
+            
+    elif provider == "gemini":
+        try:
+            prompt_parts = [f"SYSTEM INSTRUCTIONS:\n{system}\n"]
+            for turn in history_list:
+                role_label = "USER" if turn["role"] == "user" else "ASSISTANT"
+                prompt_parts.append(f"{role_label}: {turn['content']}")
+            prompt_parts.append(f"USER: {message}")
+            prompt = "\n\n".join(prompt_parts)
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.generate_content(prompt)
+            )
+            return response.text or ""
+        except Exception as e:
+            print(f"Gemini API error during voice response: {e}")
+            return "I am sorry, I had trouble connecting to my brain. Can you repeat that?"
+            
+    else:
+        # Mock response when no API keys are loaded
+        await asyncio.sleep(0.6)
+        if "pricing" in message.lower() or "cost" in message.lower() or "plans" in message.lower():
+            return f"Regarding pricing, please consult the website for current plans. In our knowledge base for {site_url or 'the site'}, plans are listed. Can I help you with anything else?"
+        return f"Hello, this is a simulated response. You asked: {message}. We found grounding context for {site_url or 'the site'} in our local vector database."
+
+@app.post("/twilio/voice")
+async def twilio_voice(request: Request):
+    job_id = request.query_params.get("job_id")
+    job = jobs.get(job_id) if job_id else None
+    
+    company_name = "our business"
+    if job:
+        site_url = job.get("site_url", "")
+        if site_url:
+            company_name = site_url.replace("https://", "").replace("http://", "").split("/")[0].split(".")[0].title()
+            
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna-Neural">
+        Hello! Thanks for calling the {company_name} AI assistant. How can I help you today?
+    </Say>
+    <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
+</Response>"""
+    return Response(content=twiml, media_type="application/xml")
+
+@app.post("/twilio/respond")
+async def twilio_respond(request: Request):
+    job_id = request.query_params.get("job_id")
+    job = jobs.get(job_id) if job_id else None
+    
+    body = await request.body()
+    params = parse_qs(body.decode())
+    speech_result = params.get("SpeechResult", [""])[0].strip()
+    
+    if not speech_result:
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna-Neural">
+        I didn't quite catch that. Can you please repeat your question?
+    </Say>
+    <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
+</Response>"""
+        return Response(content=twiml, media_type="application/xml")
+        
+    site_url = job.get("site_url") if job else None
+    system_prompt = "You are a helpful assistant."
+    if job and job.get("kb"):
+        system_prompt = job["kb"].get("system_prompt", system_prompt)
+        
+    history_key = "history_voice"
+    if job:
+        if history_key not in job:
+            job[history_key] = []
+        history = job[history_key]
+    else:
+        history = []
+        
+    raw_answer = await get_voice_response(speech_result, system_prompt, site_url, history)
+    answer = clean_for_speech(raw_answer)
+    
+    if job:
+        job[history_key].append({"role": "user", "content": speech_result})
+        job[history_key].append({"role": "assistant", "content": answer})
+        job[history_key] = job[history_key][-6:]
+        
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna-Neural">
+        {answer}
+    </Say>
+    <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
+</Response>"""
+    return Response(content=twiml, media_type="application/xml")
 
 if __name__ == "__main__":
     import uvicorn
