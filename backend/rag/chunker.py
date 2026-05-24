@@ -1,4 +1,4 @@
-def chunk_article(article: dict, chunk_size=500, overlap=50) -> list[dict]:
+def chunk_article(article: dict, site_url: str, chunk_size=500, overlap=50) -> list[dict]:
     content = article.get("content", "")
     words = content.split()
     chunks = []
@@ -13,6 +13,7 @@ def chunk_article(article: dict, chunk_size=500, overlap=50) -> list[dict]:
         source_url = source_urls[0] if source_urls else ""
         chunks.append({
             "text": text,
+            "site_url": site_url,
             "source_url": source_url,
             "title": article.get("title", ""),
             "category": article.get("category", ""),

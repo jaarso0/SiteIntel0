@@ -99,6 +99,7 @@ async def crawl_specific_urls(site_url: str, hints: list[str]) -> list[dict]:
 async def run_pipeline(job_id: str, seed_url: str):
     seed_url = seed_url.rstrip("/")
     db = get_db()
+    jobs[job_id]["site_url"] = seed_url
     try:
         # Check cache first for instant load
         cached_kb_json = get_kb_from_cache(db, seed_url)
@@ -111,7 +112,7 @@ async def run_pipeline(job_id: str, seed_url: str):
             # Re-index cache into RAG just in case
             all_chunks = []
             for article in kb.get("kb_articles", []):
-                chunks = chunk_article(article, chunk_size=300, overlap=30)
+                chunks = chunk_article(article, seed_url, chunk_size=300, overlap=30)
                 all_chunks.extend(chunks)
             index_chunks(all_chunks)
             
@@ -166,7 +167,7 @@ async def run_pipeline(job_id: str, seed_url: str):
         # Index RAG
         all_chunks = []
         for article in kb.get("kb_articles", []):
-            chunks = chunk_article(article, chunk_size=300, overlap=30)
+            chunks = chunk_article(article, seed_url, chunk_size=300, overlap=30)
             all_chunks.extend(chunks)
             
         if all_chunks:
@@ -181,9 +182,9 @@ async def run_pipeline(job_id: str, seed_url: str):
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"] = str(e)
 
-async def stream_chat(message: str, use_kb: bool, system_prompt: str):
+async def stream_chat(message: str, use_kb: bool, system_prompt: str, site_url: str = None, history: list = None):
     if use_kb:
-        chunks = search(message, n=5)
+        chunks = search(message, site_url=site_url, n=5)
         context = "\n\n".join(
             f"[Source: {c['source_url']}]\n{c['text']}" for c in chunks
         )
@@ -192,15 +193,18 @@ async def stream_chat(message: str, use_kb: bool, system_prompt: str):
         system = "You are a helpful assistant. You do not have access to any external knowledge base. Speak generally."
 
     provider, client = get_chat_client()
+    history_list = history or []
     
     if provider == "groq":
         try:
+            # Construct the conversational messages array
+            messages = [{"role": "system", "content": system}]
+            messages.extend(history_list)
+            messages.append({"role": "user", "content": message})
+            
             stream = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": message}
-                ],
+                messages=messages,
                 stream=True,
             )
             for chunk in stream:
@@ -213,11 +217,25 @@ async def stream_chat(message: str, use_kb: bool, system_prompt: str):
             
     elif provider == "gemini":
         try:
-            # Format system prompt and user query for Gemini
-            prompt = f"SYSTEM INSTRUCTIONS:\n{system}\n\nUSER QUESTION:\n{message}"
+            # Format system prompt, conversational turns, and user query for Gemini
+            prompt_parts = [f"SYSTEM INSTRUCTIONS:\n{system}\n"]
+            for turn in history_list:
+                role_label = "USER" if turn["role"] == "user" else "ASSISTANT"
+                prompt_parts.append(f"{role_label}: {turn['content']}")
+            prompt_parts.append(f"USER: {message}")
+            prompt = "\n\n".join(prompt_parts)
+            
             response = client.generate_content(prompt, stream=True)
             for chunk in response:
-                yield chunk.text
+                try:
+                    # Safely access the text to avoid quick accessor crashes on safety/finish blocks
+                    if chunk.candidates and chunk.candidates[0].content.parts:
+                        text_part = chunk.text
+                        if text_part:
+                            yield text_part
+                except Exception as e:
+                    # Silence non-text chunk exceptions (e.g. final finish_reason metadata)
+                    continue
                 await asyncio.sleep(0.01)
         except Exception as e:
             print(f"Gemini API error during chat: {e}")
@@ -256,15 +274,36 @@ def get_status(job_id: str):
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     job = jobs.get(req.job_id)
+    site_url = job.get("site_url") if job else None
+    
     if job and job.get("kb"):
         system_prompt = job["kb"].get("system_prompt", "You are a helpful assistant.")
     else:
         system_prompt = "You are a helpful assistant."
         
-    return StreamingResponse(
-        stream_chat(req.message, req.use_kb, system_prompt),
-        media_type="text/plain"
-    )
+    # Get or initialize history per job and per tenant (use_kb panel vs normal panel)
+    history_key = "history_kb" if req.use_kb else "history_normal"
+    if job:
+        if history_key not in job:
+            job[history_key] = []
+        history = job[history_key]
+    else:
+        history = []
+        
+    async def chat_wrapper():
+        full_response = ""
+        async for chunk in stream_chat(req.message, req.use_kb, system_prompt, site_url, history):
+            full_response += chunk
+            yield chunk
+            
+        # Once complete, save both user message and final response to history!
+        if job:
+            job[history_key].append({"role": "user", "content": req.message})
+            job[history_key].append({"role": "assistant", "content": full_response})
+            # Bound history to last 6 entries (3 full turns) to prevent context bloat
+            job[history_key] = job[history_key][-6:]
+            
+    return StreamingResponse(chat_wrapper(), media_type="text/plain")
 
 if __name__ == "__main__":
     import uvicorn

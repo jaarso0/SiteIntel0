@@ -39,14 +39,21 @@ def index_chunks(chunks: list[dict]):
         metadatas=metadatas
     )
 
-def search(query: str, n=5) -> list[dict]:
+def search(query: str, site_url: str = None, n=5) -> list[dict]:
     from rag.embedder import embed
     col = get_collection()
     
     # Embed the query
     vec = embed([query])[0]
     
-    results = col.query(query_embeddings=[vec], n_results=n)
+    # Construct metadata filter
+    where_clause = {"site_url": site_url} if site_url else None
+    
+    results = col.query(
+        query_embeddings=[vec],
+        n_results=n,
+        where=where_clause
+    )
     
     # Format and return the search results
     formatted_results = []
