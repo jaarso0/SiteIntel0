@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { UrlInput } from "./components/UrlInput";
 import { ProgressBar } from "./components/ProgressBar";
 import { ChatPanel } from "./components/ChatPanel";
+import { KbViewer } from "./components/KbViewer";
+import { DeployHub } from "./components/DeployHub";
+import { OnboardingFlow } from "./components/OnboardingFlow";
 
 const API_BASE = "http://localhost:8080";
 
@@ -11,6 +14,10 @@ function App() {
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [kb, setKb] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<"chat" | "kb" | "deploy">("chat");
+  const [submittedUrl, setSubmittedUrl] = useState("");
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Poll job status
   useEffect(() => {
@@ -30,6 +37,8 @@ function App() {
 
         if (data.status === "ready") {
           setIsLoading(false);
+          setKb(data.kb);
+          setViewMode("kb");
           clearInterval(interval);
         } else if (data.status === "failed") {
           setIsLoading(false);
@@ -52,6 +61,8 @@ function App() {
     setProgress(0);
     setStatus("pending");
     setJobId(null);
+    setSubmittedUrl(url);
+    setShowOnboarding(true);
 
     try {
       const response = await fetch(`${API_BASE}/crawl`, {
@@ -81,65 +92,190 @@ function App() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen bg-[#06070a] text-gray-100 selection:bg-purple-500/30 selection:text-purple-200">
+    <div className="flex-1 flex flex-col min-h-screen bg-[#060608] text-[#F0EDE8] selection:bg-[#7B5EA7]/20 selection:text-[#F0EDE8]">
       
-      {/* Decorative Cyber Grid Background Grid */}
-      <div className="absolute inset-0 bg-[radial-gradient(#ffffff03_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none"></div>
-      
-      {/* Header Bar */}
-      <header className="glass-panel border-b border-white/5 py-4 px-6 relative z-10">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {/* Glowing SiteIntel Neon Logo */}
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-600 to-cyan-500 text-white shadow-lg shadow-purple-500/20">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      {/* Header Bar: sticky, height 52px, rgba background, blur */}
+      <header className="sticky top-0 z-50 h-[52px] bg-[rgba(6,6,8,0.85)] backdrop-blur-[20px] border-b border-[rgba(255,255,255,0.06)] px-6">
+        <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            {/* Brand mark lightning SVG with violet-to-cyan gradient */}
+            <div className="w-7 h-7 flex items-center justify-center shrink-0 rounded-[8px] bg-gradient-to-br from-[#7B5EA7] to-[#00E5CC] text-white">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
               </svg>
             </div>
-            <div className="flex flex-col">
-              <h1 className="font-heading font-extrabold text-xl tracking-tight bg-gradient-to-r from-white via-gray-100 to-purple-300 bg-clip-text text-transparent heading-glow">
-                SiteIntel
-              </h1>
-              <p className="text-[10px] uppercase font-bold tracking-wider text-cyan-400">
-                Grounded Knowledge Base Architect
-              </p>
-            </div>
+            <span className="font-display font-bold text-[18px] text-[#F0EDE8] tracking-tight">
+              SiteIntel
+            </span>
           </div>
 
-          {/* Quick Stats / Info badge */}
-          <div className="hidden sm:flex items-center gap-2 bg-white/5 border border-white/5 px-3 py-1.5 rounded-xl text-xs text-gray-400 font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-            Gemini 2.5 Flash Online
+          {/* Navigation Links: text only, 13px, active cyan bottom border */}
+          {kb && (
+            <div className="flex gap-6 h-full items-center">
+              <button
+                onClick={() => setViewMode("chat")}
+                className={`h-full px-1 text-[13px] font-normal transition-all duration-150 cursor-pointer border-none bg-transparent flex items-center relative ${
+                  viewMode === "chat"
+                    ? "text-[#F0EDE8] font-semibold"
+                    : "text-[rgba(255,255,255,0.4)] hover:text-[#F0EDE8]"
+                }`}
+              >
+                <span>Chat Agent</span>
+                {viewMode === "chat" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#00E5CC]"></span>
+                )}
+              </button>
+              <button
+                onClick={() => setViewMode("kb")}
+                className={`h-full px-1 text-[13px] font-normal transition-all duration-150 cursor-pointer border-none bg-transparent flex items-center relative ${
+                  viewMode === "kb"
+                    ? "text-[#F0EDE8] font-semibold"
+                    : "text-[rgba(255,255,255,0.4)] hover:text-[#F0EDE8]"
+                }`}
+              >
+                <span>Knowledge Base</span>
+                {viewMode === "kb" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#00E5CC]"></span>
+                )}
+              </button>
+              <button
+                onClick={() => setViewMode("deploy")}
+                className={`h-full px-1 text-[13px] font-normal transition-all duration-150 cursor-pointer border-none bg-transparent flex items-center relative ${
+                  viewMode === "deploy"
+                    ? "text-[#F0EDE8] font-semibold"
+                    : "text-[rgba(255,255,255,0.4)] hover:text-[#F0EDE8]"
+                }`}
+              >
+                <span>Deploy Agent</span>
+                {viewMode === "deploy" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#00E5CC]"></span>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Right side: Gemini status chip with pulsing green/cyan dot */}
+          <div className="flex items-center gap-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] px-3 py-1 rounded-[20px]">
+            <span className="w-2 h-2 rounded-full bg-[#00E5CC] animate-statusPulse"></span>
+            <span className="text-[11px] text-[rgba(255,255,255,0.5)] font-sans font-normal">
+              Gemini 2.5 Flash
+            </span>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col gap-6 relative z-10">
-        
-        {/* Step 1: URL Entry */}
-        <UrlInput onCrawlStart={handleCrawlStart} isLoading={isLoading} />
-
-        {/* Step 2: Glowing Progress Indicator */}
-        <ProgressBar status={status} progress={progress} error={error} />
-
-        {/* Step 3: High-Fidelity Split Screen Chat Demonstration */}
-        <section className="flex-1 flex flex-col lg:flex-row gap-6 mt-4">
-          <ChatPanel
-            jobId={jobId}
-            useKb={false}
-            label="Without KB"
+      <main className="flex-grow max-w-7xl w-full mx-auto p-6 flex flex-col gap-6 relative z-10 justify-center">
+        {showOnboarding ? (
+          <OnboardingFlow
+            url={submittedUrl}
+            kbReady={kb !== null}
+            error={error}
+            onComplete={() => {
+              setShowOnboarding(false);
+              setViewMode("chat");
+            }}
           />
-          <ChatPanel
-            jobId={jobId}
-            useKb={true}
-            label="With KB — SiteIntel"
-          />
-        </section>
+        ) : kb === null ? (
+          /* SaaS Hero Landing Page (when no URL crawled yet) */
+          <div className="flex-1 flex flex-col items-center justify-center py-12 max-w-4xl mx-auto text-center animate-fadeIn">
+            {/* Pulsing centered gradient lightning brandmark */}
+            <div className="w-12 h-12 flex items-center justify-center rounded-[16px] bg-gradient-to-br from-[#7B5EA7] to-[#00E5CC] text-white shadow-[0_8px_32px_rgba(123,94,167,0.3)] mb-8 animate-statusPulse">
+              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+              </svg>
+            </div>
+
+            <h1 className="font-display font-bold text-[36px] md:text-[44px] leading-tight text-[#F0EDE8] tracking-tight max-w-2xl">
+              Architect Grounded AI Agents Natively.
+            </h1>
+            
+            <p className="text-sm md:text-base text-[rgba(255,255,255,0.4)] max-w-xl mt-4 mb-10 leading-relaxed font-normal">
+              Turn any website into a high-fidelity voice and chat support line. Crawl pages, synthesize structured knowledge bases with Gemini 2.5 Flash, and go live in seconds.
+            </p>
+
+            {/* URL Input Bar centered directly under hero */}
+            <div className="w-full max-w-[640px]">
+              <UrlInput 
+                onCrawlStart={handleCrawlStart} 
+                isLoading={isLoading} 
+                hasKb={false}
+                onDeployClick={() => setViewMode("deploy")}
+                isDeployActive={false}
+              />
+            </div>
+
+            {/* Premium feature grid cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-16 w-full px-4">
+              {[
+                {
+                  title: "High-Performance Crawler",
+                  desc: "Playwright and BeautifulSoup render, scrape, and extract target domain hierarchies.",
+                  color: "border-l-2 border-[#7B5EA7]"
+                },
+                {
+                  title: "Local ChromaDB Vector RAG",
+                  desc: "Securely chunk, index, and query local embeddings with zero third-party data leakage.",
+                  color: "border-l-2 border-[#00E5CC]"
+                },
+                {
+                  title: "Sandbox & Deploy Hub",
+                  desc: "Instantly test voice sandbox calls, copy chat widget embeds, or hook Twilio trunks.",
+                  color: "border-l-2 border-[#F0EDE8]"
+                }
+              ].map((feat, idx) => (
+                <div
+                  key={idx}
+                  className={`premium-card p-5 text-left flex flex-col gap-2 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[rgba(255,255,255,0.05)] cursor-default ${feat.color}`}
+                >
+                  <h4 className="font-display font-bold text-xs uppercase tracking-wider text-[#F0EDE8]">
+                    {feat.title}
+                  </h4>
+                  <p className="text-[11px] text-[rgba(255,255,255,0.4)] leading-relaxed font-normal">
+                    {feat.desc}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* Active Grounded workspace (once url is successfully indexed) */
+          <>
+            {/* Step 1: URL Entry (re-crawls or swaps active url) */}
+            <UrlInput 
+              onCrawlStart={handleCrawlStart} 
+              isLoading={isLoading} 
+              hasKb={true}
+              onDeployClick={() => setViewMode("deploy")}
+              isDeployActive={viewMode === "deploy"}
+            />
+
+            {/* Step 2: Glowing Progress Indicator */}
+            <ProgressBar status={status} progress={progress} error={error} />
+
+            {/* Step 3: Single full-width active Chat Panel / Knowledge Base / Deploy Hub */}
+            {viewMode === "chat" ? (
+              <section className="flex-1 flex flex-col gap-6 mt-4 animate-fadeIn">
+                <ChatPanel
+                  jobId={jobId}
+                  useKb={true}
+                />
+              </section>
+            ) : viewMode === "kb" ? (
+              <section className="flex-1 flex flex-col mt-4 animate-fadeIn">
+                <KbViewer kb={kb} />
+              </section>
+            ) : (
+              <section className="flex-1 flex flex-col mt-4 animate-fadeIn">
+                <DeployHub kb={kb} jobId={jobId} />
+              </section>
+            )}
+          </>
+        )}
       </main>
 
-      {/* Footer footer */}
-      <footer className="py-6 text-center text-[11px] text-muted border-t border-white/5 mt-auto relative z-10 bg-black/20">
+      {/* Footer */}
+      <footer className="py-6 text-center text-[11px] text-[rgba(255,255,255,0.4)] border-t border-[rgba(255,255,255,0.06)] mt-auto relative z-10 bg-[rgba(6,6,8,0.5)] font-mono">
         <p className="tracking-wide">
           SiteIntel © 2026. Architected with local Sentence-Transformers & persistent ChromaDB RAG.
         </p>
