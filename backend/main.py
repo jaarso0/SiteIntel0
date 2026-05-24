@@ -27,7 +27,12 @@ app = FastAPI(title="SiteIntel API")
 # Configure CORS for React development server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,7 +62,7 @@ def get_chat_client():
     if gemini_key and gemini_key != "your_key_here":
         try:
             import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
+            genai.configure(api_key=gemini_key, transport="rest")
             return "gemini", genai.GenerativeModel("gemini-2.5-flash")
         except Exception as e:
             print(f"Error configuring Gemini: {e}")
@@ -92,6 +97,7 @@ async def crawl_specific_urls(site_url: str, hints: list[str]) -> list[dict]:
     return extra_pages
 
 async def run_pipeline(job_id: str, seed_url: str):
+    seed_url = seed_url.rstrip("/")
     db = get_db()
     try:
         # Check cache first for instant load
@@ -221,6 +227,7 @@ async def stream_chat(message: str, use_kb: bool, system_prompt: str):
 
 @app.post("/crawl")
 async def start_crawl(req: CrawlRequest):
+    normalized_url = req.url.rstrip("/")
     job_id = str(uuid.uuid4())
     jobs[job_id] = {
         "job_id": job_id,
@@ -229,7 +236,7 @@ async def start_crawl(req: CrawlRequest):
         "kb": None
     }
     # Start the async pipeline task in the background
-    asyncio.create_task(run_pipeline(job_id, req.url))
+    asyncio.create_task(run_pipeline(job_id, normalized_url))
     return {"job_id": job_id}
 
 @app.get("/status/{job_id}")

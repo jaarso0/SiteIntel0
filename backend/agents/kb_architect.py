@@ -17,7 +17,7 @@ def build_kb(pages: list[dict], competitor_pages: list[dict]) -> dict:
     if not api_key or api_key == "your_key_here":
         raise ValueError("GEMINI_API_KEY environment variable is not set or is still a placeholder")
 
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=api_key, transport="rest")
     model = genai.GenerativeModel("gemini-2.5-flash")
 
     site_content = "\n\n".join(
