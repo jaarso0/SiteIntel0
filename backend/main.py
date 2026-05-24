@@ -13,7 +13,7 @@ from groq import Groq
 # Load environment variables
 load_dotenv()
 
-from crawler.orchestrator import crawl_site
+from crawler.orchestrator import crawl_site, find_competitors, crawl_competitors
 from crawler.extractor import fetch_and_extract
 from crawler.classifier import classify
 from store.db import get_db, get_crawled_pages, save_kb_to_cache, get_kb_from_cache, save_page
@@ -120,20 +120,30 @@ async def run_pipeline(job_id: str, seed_url: str):
             jobs[job_id]["kb"] = kb
             return
 
-        # Start primary crawl
+        # Start primary crawl and competitor crawl concurrently
         jobs[job_id]["status"] = "crawling"
         jobs[job_id]["progress"] = 10
-        await crawl_site(seed_url, max_pages=20)  # capped at 20 for fast demo
         
+        competitors = find_competitors(seed_url)
+        print(f"Discovered competitors to analyze: {competitors}")
+        
+        # Execute primary site crawl and competitor main page crawls in parallel
+        await asyncio.gather(
+            crawl_site(seed_url, max_pages=20),
+            crawl_competitors_task := asyncio.create_task(crawl_competitors(competitors))
+        )
+        
+        competitor_pages = crawl_competitors_task.result()
         pages = get_crawled_pages(db, seed_url)
+        
         if not pages:
             raise ValueError("No pages crawled successfully")
             
         jobs[job_id]["progress"] = 40
         jobs[job_id]["status"] = "building_kb"
         
-        # Build KB
-        kb = build_kb(pages, [])
+        # Build KB with both site content and competitor content
+        kb = build_kb(pages, competitor_pages)
         jobs[job_id]["progress"] = 70
         jobs[job_id]["status"] = "auditing"
         
@@ -146,7 +156,7 @@ async def run_pipeline(job_id: str, seed_url: str):
             if extra_pages:
                 pages.extend(extra_pages)
                 jobs[job_id]["status"] = "re-building_kb"
-                kb = build_kb(pages, [])
+                kb = build_kb(pages, competitor_pages)
                 
         # Save KB to cache
         save_kb_to_cache(db, seed_url, json.dumps(kb))

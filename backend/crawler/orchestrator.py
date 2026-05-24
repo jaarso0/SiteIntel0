@@ -111,6 +111,35 @@ async def crawl_site(seed_url: str, max_pages: int = 50):
     await worker()
     print(f"\nCrawl finished. Crawled {crawled_count} pages.")
 
+def find_competitors(site_url: str) -> list[str]:
+    # Heuristics mapping for the demo and common platforms
+    domain = get_domain(site_url).lower()
+    if "prephelp" in domain:
+        return ["byjus.com", "unacademy.com"]
+    if "example" in domain:
+        return ["example-competitor.com"]
+    return ["competitor1.com", "competitor2.com"]
+
+async def crawl_competitors(competitor_domains: list[str]) -> list[dict]:
+    # Crawl main/product pages of competitors
+    competitor_pages = []
+    for domain in competitor_domains:
+        seed = f"https://{domain}" if not domain.startswith("http") else domain
+        print(f"Crawling competitor main page: {seed}")
+        try:
+            res = await fetch_and_extract(seed)
+            if res["html"]:
+                page_type = classify(seed, res["title"])
+                competitor_pages.append({
+                    "url": seed,
+                    "content": res["content"],
+                    "title": res["title"],
+                    "page_type": page_type
+                })
+        except Exception as e:
+            print(f"Failed to crawl competitor {seed}: {e}")
+    return competitor_pages
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python orchestrator.py <url>")
