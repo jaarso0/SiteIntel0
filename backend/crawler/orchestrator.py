@@ -64,6 +64,8 @@ async def crawl_site(seed_url: str, max_pages: int = 50):
     async def worker():
         nonlocal crawled_count
         while crawled_count < max_pages:
+            if queue.empty():
+                break
             try:
                 # Wait for next item
                 priority, url = await queue.get()
