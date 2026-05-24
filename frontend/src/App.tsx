@@ -3,6 +3,7 @@ import { UrlInput } from "./components/UrlInput";
 import { ProgressBar } from "./components/ProgressBar";
 import { ChatPanel } from "./components/ChatPanel";
 import { KbViewer } from "./components/KbViewer";
+import { DeployHub } from "./components/DeployHub";
 
 const API_BASE = "http://localhost:8080";
 
@@ -13,7 +14,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [kb, setKb] = useState<any>(null);
-  const [viewMode, setViewMode] = useState<"chat" | "kb">("chat");
+  const [viewMode, setViewMode] = useState<"chat" | "kb" | "deploy">("chat");
 
   // Poll job status
   useEffect(() => {
@@ -147,6 +148,21 @@ function App() {
                   </span>
                 )}
               </button>
+              {kb && (
+                <button
+                  onClick={() => setViewMode("deploy")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all duration-300 flex items-center gap-1.5 cursor-pointer ${
+                    viewMode === "deploy"
+                      ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span>Deploy Agent</span>
+                </button>
+              )}
             </div>
 
             {/* Quick Stats / Info badge */}
@@ -162,12 +178,18 @@ function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col gap-6 relative z-10">
         
         {/* Step 1: URL Entry */}
-        <UrlInput onCrawlStart={handleCrawlStart} isLoading={isLoading} />
+        <UrlInput 
+          onCrawlStart={handleCrawlStart} 
+          isLoading={isLoading} 
+          hasKb={kb !== null}
+          onDeployClick={() => setViewMode("deploy")}
+          isDeployActive={viewMode === "deploy"}
+        />
 
         {/* Step 2: Glowing Progress Indicator */}
         <ProgressBar status={status} progress={progress} error={error} />
 
-        {/* Step 3: High-Fidelity Views (Chat Panel / Knowledge Base) */}
+        {/* Step 3: High-Fidelity Views (Chat Panel / Knowledge Base / Deploy Hub) */}
         {viewMode === "chat" ? (
           <section className="flex-1 flex flex-col lg:flex-row gap-6 mt-4 animate-fadeIn">
             <ChatPanel
@@ -181,9 +203,13 @@ function App() {
               label="With KB — SiteIntel"
             />
           </section>
+        ) : viewMode === "kb" ? (
+          <section className="flex-1 flex flex-col mt-4 animate-fadeIn">
+            <KbViewer kb={kb} />
+          </section>
         ) : (
           <section className="flex-1 flex flex-col mt-4 animate-fadeIn">
-            <KbViewer kb={kb} jobId={jobId} />
+            <DeployHub kb={kb} jobId={jobId} />
           </section>
         )}
       </main>

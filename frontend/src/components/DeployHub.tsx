@@ -225,6 +225,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
           job_id: jobId,
           message: messageText,
           use_kb: true,
+          is_voice: true,
         }),
       });
 

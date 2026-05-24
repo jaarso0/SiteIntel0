@@ -16,7 +16,7 @@ load_dotenv()
 from crawler.orchestrator import crawl_site, find_competitors, crawl_competitors
 from crawler.extractor import fetch_and_extract
 from crawler.classifier import classify
-from store.db import get_db, get_crawled_pages, save_kb_to_cache, get_kb_from_cache, save_page
+from store.db import get_db, get_crawled_pages, save_kb_to_cache, get_kb_from_cache, save_page, save_active_job, get_active_job
 from agents.kb_architect import build_kb
 from agents.auditor import audit
 from rag.chunker import chunk_article
@@ -48,6 +48,7 @@ class ChatRequest(BaseModel):
     job_id: str
     message: str
     use_kb: bool = True
+    is_voice: bool = False
 
 def get_chat_client():
     """Helper to select either Groq or Gemini based on configured keys"""
@@ -119,6 +120,7 @@ async def run_pipeline(job_id: str, seed_url: str):
             jobs[job_id]["progress"] = 100
             jobs[job_id]["status"] = "ready"
             jobs[job_id]["kb"] = kb
+            save_active_job(db, job_id, seed_url, cached_kb_json)
             return
 
         # Start primary crawl and competitor crawl concurrently
@@ -176,21 +178,36 @@ async def run_pipeline(job_id: str, seed_url: str):
         jobs[job_id]["progress"] = 100
         jobs[job_id]["status"] = "ready"
         jobs[job_id]["kb"] = kb
+        save_active_job(db, job_id, seed_url, json.dumps(kb))
         
     except Exception as e:
         print(f"Error in pipeline execution for job {job_id}: {e}")
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"] = str(e)
 
-async def stream_chat(message: str, use_kb: bool, system_prompt: str, site_url: str = None, history: list = None):
+async def stream_chat(message: str, use_kb: bool, system_prompt: str, site_url: str = None, history: list = None, is_voice: bool = False):
     if use_kb:
         chunks = search(message, site_url=site_url, n=5)
         context = "\n\n".join(
             f"[Source: {c['source_url']}]\n{c['text']}" for c in chunks
         )
-        system = f"{system_prompt}\n\nCONTEXT:\n{context}\n\nAnswer ONLY from context. Cite sources. Be specific."
+        if is_voice:
+            system = (
+                f"{system_prompt}\n\n"
+                f"CONTEXT:\n{context}\n\n"
+                f"Guidelines for VOICE Call:\n"
+                f"1. You are speaking on a real-time voice call. Be extremely warm, direct, and conversational.\n"
+                f"2. Keep the response very concise (1 to 3 short sentences maximum).\n"
+                f"3. Never output lists, bullet points, asterisks, markdown, or bracketed source citations like '[Source: ...]'.\n"
+                f"4. Speak in natural paragraphs that are easy to hear. Answer ONLY from context. If you don't know, say you don't know."
+            )
+        else:
+            system = f"{system_prompt}\n\nCONTEXT:\n{context}\n\nAnswer ONLY from context. Cite sources. Be specific."
     else:
-        system = "You are a helpful assistant. You do not have access to any external knowledge base. Speak generally."
+        if is_voice:
+            system = "You are a helpful voice assistant. Keep answers to 1-2 concise sentences."
+        else:
+            system = "You are a helpful assistant. You do not have access to any external knowledge base. Speak generally."
 
     provider, client = get_chat_client()
     history_list = history or []
@@ -263,17 +280,54 @@ async def start_crawl(req: CrawlRequest):
         "progress": 0,
         "kb": None
     }
+    # Persist job startup mapping in SQLite to handle restarts
+    db = get_db()
+    save_active_job(db, job_id, normalized_url)
+    
     # Start the async pipeline task in the background
     asyncio.create_task(run_pipeline(job_id, normalized_url))
     return {"job_id": job_id}
 
 @app.get("/status/{job_id}")
 def get_status(job_id: str):
+    job = jobs.get(job_id)
+    if not job:
+        db = get_db()
+        db_job = get_active_job(db, job_id)
+        if db_job:
+            site_url, kb_json = db_job
+            kb = json.loads(kb_json) if kb_json else None
+            job = {
+                "job_id": job_id,
+                "status": "ready" if kb else "pending",
+                "progress": 100 if kb else 0,
+                "kb": kb,
+                "site_url": site_url
+            }
+            jobs[job_id] = job
     return jobs.get(job_id, {"status": "not_found"})
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     job = jobs.get(req.job_id)
+    db = get_db()
+    
+    # Recover job configurations automatically from SQLite if the server reloaded/restarted
+    if not job:
+        db_job = get_active_job(db, req.job_id)
+        if db_job:
+            site_url_recovered, kb_json = db_job
+            kb_recovered = json.loads(kb_json) if kb_json else None
+            job = {
+                "job_id": req.job_id,
+                "status": "ready" if kb_recovered else "pending",
+                "progress": 100 if kb_recovered else 0,
+                "kb": kb_recovered,
+                "site_url": site_url_recovered
+            }
+            jobs[req.job_id] = job
+            print(f"Auto-recovered active job session {req.job_id} for RAG site: {site_url_recovered}")
+            
     site_url = job.get("site_url") if job else None
     
     if job and job.get("kb"):
@@ -281,8 +335,12 @@ async def chat_endpoint(req: ChatRequest):
     else:
         system_prompt = "You are a helpful assistant."
         
-    # Get or initialize history per job and per tenant (use_kb panel vs normal panel)
-    history_key = "history_kb" if req.use_kb else "history_normal"
+    # Get or initialize history per job and per tenant (voice sandbox vs standard chat panel)
+    if req.is_voice:
+        history_key = "history_voice"
+    else:
+        history_key = "history_kb" if req.use_kb else "history_normal"
+        
     if job:
         if history_key not in job:
             job[history_key] = []
@@ -292,7 +350,7 @@ async def chat_endpoint(req: ChatRequest):
         
     async def chat_wrapper():
         full_response = ""
-        async for chunk in stream_chat(req.message, req.use_kb, system_prompt, site_url, history):
+        async for chunk in stream_chat(req.message, req.use_kb, system_prompt, site_url, history, req.is_voice):
             full_response += chunk
             yield chunk
             

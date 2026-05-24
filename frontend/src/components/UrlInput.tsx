@@ -3,9 +3,18 @@ import React, { useState } from "react";
 interface UrlInputProps {
   onCrawlStart: (url: string) => void;
   isLoading: boolean;
+  hasKb: boolean;
+  onDeployClick: () => void;
+  isDeployActive: boolean;
 }
 
-export const UrlInput: React.FC<UrlInputProps> = ({ onCrawlStart, isLoading }) => {
+export const UrlInput: React.FC<UrlInputProps> = ({ 
+  onCrawlStart, 
+  isLoading,
+  hasKb,
+  onDeployClick,
+  isDeployActive
+}) => {
   const [url, setUrl] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -68,6 +77,23 @@ export const UrlInput: React.FC<UrlInputProps> = ({ onCrawlStart, isLoading }) =
             </>
           )}
         </button>
+
+        {hasKb && (
+          <button
+            type="button"
+            onClick={onDeployClick}
+            className={`glow-button px-7 py-3.5 bg-gradient-to-r ${
+              isDeployActive
+                ? "from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 ring-2 ring-cyan-500/50"
+                : "from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 shadow-teal-600/20"
+            } text-white rounded-xl text-sm font-semibold tracking-wide flex items-center gap-3 transition-all duration-300 shadow-md active:scale-95 cursor-pointer`}
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span>{isDeployActive ? "Viewing Deploy Hub" : "🚀 Deploy Agent"}</span>
+          </button>
+        )}
       </form>
     </div>
   );

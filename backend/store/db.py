@@ -20,6 +20,11 @@ def get_db():
         kb_json TEXT,
         created_at TEXT
     )""")
+    db.execute("""CREATE TABLE IF NOT EXISTS active_jobs (
+        job_id TEXT PRIMARY KEY,
+        site_url TEXT,
+        kb_json TEXT
+    )""")
     db.commit()
     return db
 
@@ -63,3 +68,16 @@ def save_kb_to_cache(db, site_url: str, kb_json: str):
         (sh, kb_json, created_at)
     )
     db.commit()
+
+def save_active_job(db, job_id: str, site_url: str, kb_json: str = None):
+    db.execute(
+        "INSERT OR REPLACE INTO active_jobs (job_id, site_url, kb_json) VALUES (?, ?, ?)",
+        (job_id, site_url, kb_json)
+    )
+    db.commit()
+
+def get_active_job(db, job_id: str) -> tuple[str, str] | None:
+    cursor = db.cursor()
+    cursor.execute("SELECT site_url, kb_json FROM active_jobs WHERE job_id = ?", (job_id,))
+    row = cursor.fetchone()
+    return row if row else None
