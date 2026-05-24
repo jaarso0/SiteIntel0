@@ -1,0 +1,19 @@
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/.env
+backend/chroma_db/
+backend/siteintel.db
+
+# Node/React
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
