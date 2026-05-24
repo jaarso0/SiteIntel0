@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { UrlInput } from "./components/UrlInput";
 import { ProgressBar } from "./components/ProgressBar";
 import { ChatPanel } from "./components/ChatPanel";

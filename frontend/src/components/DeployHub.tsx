@@ -18,12 +18,37 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
   const [isAiStreaming, setIsAiStreaming] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [elevenLabsActive, setElevenLabsActive] = useState(false);
+  const [puterActive, setPuterActive] = useState(false);
 
   const recognitionRef = useRef<any>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerIntervalRef = useRef<any>(null);
   const captionsEndRef = useRef<HTMLDivElement | null>(null);
   const activeCallStateRef = useRef(callState);
+
+  // Check ElevenLabs & Puter availability on mount
+  useEffect(() => {
+    fetch(`${API_BASE}/voice/status`)
+      .then((res) => res.json())
+      .then((data) => {
+        setElevenLabsActive(data.eleven_labs_active || false);
+      })
+      .catch((e) => console.log("ElevenLabs voice is offline.", e));
+
+    if ((window as any).puter) {
+      setPuterActive(true);
+    } else {
+      const interval = setInterval(() => {
+        if ((window as any).puter) {
+          setPuterActive(true);
+          clearInterval(interval);
+        }
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, []);
 
   // Sync ref to call state for async browser speech events
   useEffect(() => {
@@ -124,6 +149,10 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
   // Connect virtual voice call
   const handleStartCall = () => {
     window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
     setCaptions([]);
     setCallState("dialing");
     setCaptions([{ sender: "system", text: `Dialing ${companyName} Virtual AI Agent...` }]);
@@ -144,6 +173,10 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
   // Hang up virtual call
   const handleEndCall = () => {
     window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -161,6 +194,10 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
   // Synthesize text response into voice audio
   const speakText = (text: string) => {
     window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
     setIsSpeaking(true);
 
     // Filter citations so reader avoids spelling out brackets or raw URLs
@@ -171,27 +208,109 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(filteredText);
-    utterance.rate = 1.05;
-    utterance.pitch = 1.0;
+    const runFallbackSpeechSynthesis = () => {
+      const utterance = new SpeechSynthesisUtterance(filteredText);
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
 
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      // Trigger listening after audio playback completes
-      if (activeCallStateRef.current === "connected" && !isMuted) {
-        triggerListening();
-      }
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        if (activeCallStateRef.current === "connected" && !isMuted) {
+          triggerListening();
+        }
+      };
+
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        if (activeCallStateRef.current === "connected" && !isMuted) {
+          triggerListening();
+        }
+      };
+
+      utteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
     };
 
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      if (activeCallStateRef.current === "connected" && !isMuted) {
-        triggerListening();
-      }
-    };
+    const puter = (window as any).puter;
 
-    utteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    if (puterActive && puter && puter.ai && typeof puter.ai.txt2speech === "function") {
+      try {
+        puter.ai.txt2speech(filteredText, {
+          provider: "elevenlabs",
+          voice: "21m00Tcm4TlvDq8ikWAM",
+          model: "eleven_multilingual_v2"
+        })
+        .then((audio: any) => {
+          audioRef.current = audio;
+
+          audio.onplay = () => {
+            setIsSpeaking(true);
+          };
+
+          audio.onended = () => {
+            setIsSpeaking(false);
+            audioRef.current = null;
+            if (activeCallStateRef.current === "connected" && !isMuted) {
+              triggerListening();
+            }
+          };
+
+          audio.onerror = (e: any) => {
+            console.warn("Puter ElevenLabs audio play failed, falling back to browser synthesis.", e);
+            audioRef.current = null;
+            runFallbackSpeechSynthesis();
+          };
+
+          audio.play().catch((e: any) => {
+            console.warn("Puter ElevenLabs play execution failed, falling back.", e);
+            audioRef.current = null;
+            runFallbackSpeechSynthesis();
+          });
+        })
+        .catch((err: any) => {
+          console.warn("Puter.js txt2speech call failed, falling back.", err);
+          runFallbackSpeechSynthesis();
+        });
+      } catch (e) {
+        console.warn("Puter.js txt2speech failed, falling back.", e);
+        runFallbackSpeechSynthesis();
+      }
+    } else if (elevenLabsActive) {
+      try {
+        const audioUrl = `${API_BASE}/voice/tts?text=${encodeURIComponent(filteredText)}`;
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
+
+        audio.onplay = () => {
+          setIsSpeaking(true);
+        };
+
+        audio.onended = () => {
+          setIsSpeaking(false);
+          audioRef.current = null;
+          if (activeCallStateRef.current === "connected" && !isMuted) {
+            triggerListening();
+          }
+        };
+
+        audio.onerror = (e) => {
+          console.warn("ElevenLabs audio play failed, falling back to browser synthesis.", e);
+          audioRef.current = null;
+          runFallbackSpeechSynthesis();
+        };
+
+        audio.play().catch((e) => {
+          console.warn("ElevenLabs play execution failed, falling back.", e);
+          audioRef.current = null;
+          runFallbackSpeechSynthesis();
+        });
+      } catch (e) {
+        console.warn("ElevenLabs audio construction failed, falling back.", e);
+        runFallbackSpeechSynthesis();
+      }
+    } else {
+      runFallbackSpeechSynthesis();
+    }
   };
 
   // Trigger microphone listener
@@ -490,7 +609,18 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
             
             {/* Caller identity */}
             <div className="text-center mt-3">
-              <h2 className="text-xs font-bold uppercase tracking-widest text-purple-400 font-mono">SITEINTEL VOICE LINE</h2>
+              <h2 className="text-xs font-bold uppercase tracking-widest text-purple-400 font-mono flex items-center justify-center gap-1.5">
+                <span>SITEINTEL VOICE LINE</span>
+                {(puterActive || elevenLabsActive) && (
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase animate-pulse border tracking-normal leading-none select-none ${
+                    puterActive
+                      ? "bg-purple-500/15 text-purple-400 border-purple-500/30"
+                      : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                  }`}>
+                    {puterActive ? "Puter ElevenLabs" : "RealVoice"}
+                  </span>
+                )}
+              </h2>
               <h1 className="text-lg font-heading font-extrabold text-gray-200 mt-1.5 truncate max-w-[260px] mx-auto">{companyName}</h1>
               
               {callState === "idle" && <p className="text-[10px] text-muted mt-1 uppercase font-semibold">Offline</p>}

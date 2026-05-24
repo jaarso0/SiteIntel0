@@ -9,9 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from groq import Groq
+import httpx
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 from crawler.orchestrator import crawl_site, find_competitors, crawl_competitors
 from crawler.extractor import fetch_and_extract
@@ -443,8 +444,18 @@ async def get_voice_response(message: str, system_prompt: str, site_url: str = N
             return f"Regarding pricing, please consult the website for current plans. In our knowledge base for {site_url or 'the site'}, plans are listed. Can I help you with anything else?"
         return f"Hello, this is a simulated response. You asked: {message}. We found grounding context for {site_url or 'the site'} in our local vector database."
 
+def get_elevenlabs_key() -> str | None:
+    key = os.getenv("ELEVENLABS_API_KEY")
+    if not key or key == "your_key_here":
+        return None
+    key = key.strip()
+    if key.startswith("sk_"):
+        key = key[3:]
+    return key
+
 @app.post("/twilio/voice")
 async def twilio_voice(request: Request):
+    import urllib.parse
     job_id = request.query_params.get("job_id")
     job = jobs.get(job_id) if job_id else None
     
@@ -454,17 +465,32 @@ async def twilio_voice(request: Request):
         if site_url:
             company_name = site_url.replace("https://", "").replace("http://", "").split("/")[0].split(".")[0].title()
             
-    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    api_key = get_elevenlabs_key()
+    has_el = api_key is not None
+    
+    if has_el:
+        base_url = str(request.base_url).rstrip("/")
+        greeting = f"Hello! Thanks for calling the {company_name} AI assistant. How can I help you today?"
+        encoded_greeting = urllib.parse.quote(greeting)
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Play>{base_url}/voice/tts?text={encoded_greeting}</Play>
+    <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
+</Response>"""
+    else:
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Joanna-Neural">
         Hello! Thanks for calling the {company_name} AI assistant. How can I help you today?
     </Say>
     <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
 </Response>"""
+        
     return Response(content=twiml, media_type="application/xml")
 
 @app.post("/twilio/respond")
 async def twilio_respond(request: Request):
+    import urllib.parse
     job_id = request.query_params.get("job_id")
     job = jobs.get(job_id) if job_id else None
     
@@ -472,11 +498,24 @@ async def twilio_respond(request: Request):
     params = parse_qs(body.decode())
     speech_result = params.get("SpeechResult", [""])[0].strip()
     
+    api_key = get_elevenlabs_key()
+    has_el = api_key is not None
+    base_url = str(request.base_url).rstrip("/")
+    
     if not speech_result:
-        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+        prompt = "I didn't quite catch that. Can you please repeat your question?"
+        if has_el:
+            encoded_prompt = urllib.parse.quote(prompt)
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Play>{base_url}/voice/tts?text={encoded_prompt}</Play>
+    <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
+</Response>"""
+        else:
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Joanna-Neural">
-        I didn't quite catch that. Can you please repeat your question?
+        {prompt}
     </Say>
     <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
 </Response>"""
@@ -503,14 +542,58 @@ async def twilio_respond(request: Request):
         job[history_key].append({"role": "assistant", "content": answer})
         job[history_key] = job[history_key][-6:]
         
-    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    if has_el:
+        encoded_answer = urllib.parse.quote(answer)
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Play>{base_url}/voice/tts?text={encoded_answer}</Play>
+    <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
+</Response>"""
+    else:
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Joanna-Neural">
         {answer}
     </Say>
     <Gather input="speech" action="/twilio/respond?job_id={job_id or ''}" method="POST" speechTimeout="auto" />
 </Response>"""
+        
     return Response(content=twiml, media_type="application/xml")
+
+@app.get("/voice/tts")
+async def elevenlabs_tts(text: str, voice_id: str = "21m00Tcm4TlvDq8ikWAM"):
+    api_key = get_elevenlabs_key()
+    if not api_key:
+        return Response("ElevenLabs API Key not configured.", status_code=400)
+        
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    body = {
+        "text": text,
+        "model_id": "eleven_monolingual_v1",
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=body, timeout=30.0)
+            if response.status_code != 200:
+                print(f"ElevenLabs API Error: {response.status_code} - {response.text}")
+                return Response(f"ElevenLabs API returned error: {response.status_code}", status_code=500)
+            
+            # Return complete audio bytes as a standard HTTP response
+            return Response(content=response.content, media_type="audio/mpeg")
+    except Exception as e:
+        print(f"Connection error to ElevenLabs: {e}")
+        return Response(f"Failed to connect to ElevenLabs: {e}", status_code=500)
+
+@app.get("/voice/status")
+def get_voice_status():
+    api_key = get_elevenlabs_key()
+    return {"eleven_labs_active": api_key is not None}
 
 if __name__ == "__main__":
     import uvicorn
