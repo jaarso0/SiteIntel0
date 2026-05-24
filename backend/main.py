@@ -74,14 +74,23 @@ def get_chat_client():
 async def crawl_specific_urls(site_url: str, hints: list[str]) -> list[dict]:
     db = get_db()
     extra_pages = []
-    # Crawl max 3 specific URLs flagged by auditor
-    for hint in hints[:3]:
+    # Filter and crawl max 3 specific URLs flagged by auditor
+    valid_hints = []
+    for hint in hints:
         if not hint:
             continue
-        if hint.startswith("http"):
-            url = hint
+        hint_clean = hint.strip()
+        # Filter out natural language descriptions/topics (hints with spaces or overly long)
+        if " " in hint_clean or len(hint_clean) > 150:
+            print(f"Skipping invalid auditor recrawl hint (looks like a topic description, not a URL/path): '{hint_clean}'")
+            continue
+        valid_hints.append(hint_clean)
+
+    for url_or_path in valid_hints[:3]:
+        if url_or_path.startswith("http"):
+            url = url_or_path
         else:
-            url = urljoin(site_url, hint)
+            url = urljoin(site_url, url_or_path)
         print(f"Auditor requested re-crawl: {url}")
         try:
             res = await fetch_and_extract(url)
@@ -444,14 +453,29 @@ async def get_voice_response(message: str, system_prompt: str, site_url: str = N
             return f"Regarding pricing, please consult the website for current plans. In our knowledge base for {site_url or 'the site'}, plans are listed. Can I help you with anything else?"
         return f"Hello, this is a simulated response. You asked: {message}. We found grounding context for {site_url or 'the site'} in our local vector database."
 
-def get_elevenlabs_key() -> str | None:
-    key = os.getenv("ELEVENLABS_API_KEY")
-    if not key or key == "your_key_here":
-        return None
-    key = key.strip()
-    if key.startswith("sk_"):
-        key = key[3:]
-    return key
+def get_edge_tts_url() -> str:
+    url = os.getenv("EDGE_TTS_URL", "http://localhost:5050").strip()
+    if not url.endswith("/v1/audio/speech") and not url.endswith("/v1/audio/speech/"):
+        url = url.rstrip("/") + "/v1/audio/speech"
+    return url
+
+def get_edge_tts_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("EDGE_TTS_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key.strip()}"
+    return headers
+
+async def check_edge_tts_active() -> bool:
+    url = get_edge_tts_url()
+    base_url = url.replace("/v1/audio/speech", "")
+    headers = get_edge_tts_headers()
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(base_url, headers=headers, timeout=1.0)
+            return response.status_code < 500
+    except Exception:
+        return False
 
 @app.post("/twilio/voice")
 async def twilio_voice(request: Request):
@@ -465,10 +489,9 @@ async def twilio_voice(request: Request):
         if site_url:
             company_name = site_url.replace("https://", "").replace("http://", "").split("/")[0].split(".")[0].title()
             
-    api_key = get_elevenlabs_key()
-    has_el = api_key is not None
+    is_active = await check_edge_tts_active()
     
-    if has_el:
+    if is_active:
         base_url = str(request.base_url).rstrip("/")
         greeting = f"Hello! Thanks for calling the {company_name} AI assistant. How can I help you today?"
         encoded_greeting = urllib.parse.quote(greeting)
@@ -498,13 +521,12 @@ async def twilio_respond(request: Request):
     params = parse_qs(body.decode())
     speech_result = params.get("SpeechResult", [""])[0].strip()
     
-    api_key = get_elevenlabs_key()
-    has_el = api_key is not None
+    is_active = await check_edge_tts_active()
     base_url = str(request.base_url).rstrip("/")
     
     if not speech_result:
         prompt = "I didn't quite catch that. Can you please repeat your question?"
-        if has_el:
+        if is_active:
             encoded_prompt = urllib.parse.quote(prompt)
             twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -542,7 +564,7 @@ async def twilio_respond(request: Request):
         job[history_key].append({"role": "assistant", "content": answer})
         job[history_key] = job[history_key][-6:]
         
-    if has_el:
+    if is_active:
         encoded_answer = urllib.parse.quote(answer)
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -561,39 +583,35 @@ async def twilio_respond(request: Request):
     return Response(content=twiml, media_type="application/xml")
 
 @app.get("/voice/tts")
-async def elevenlabs_tts(text: str, voice_id: str = "21m00Tcm4TlvDq8ikWAM"):
-    api_key = get_elevenlabs_key()
-    if not api_key:
-        return Response("ElevenLabs API Key not configured.", status_code=400)
-        
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-    headers = {
-        "xi-api-key": api_key,
-        "Content-Type": "application/json",
-    }
+async def voice_tts(text: str, voice: str = "alloy"):
+    url = get_edge_tts_url()
+    headers = get_edge_tts_headers()
     body = {
-        "text": text,
-        "model_id": "eleven_monolingual_v1",
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
+        "model": "tts-1",
+        "input": text,
+        "voice": voice
     }
     
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=body, timeout=30.0)
             if response.status_code != 200:
-                print(f"ElevenLabs API Error: {response.status_code} - {response.text}")
-                return Response(f"ElevenLabs API returned error: {response.status_code}", status_code=500)
+                print(f"Edge-TTS API Error: {response.status_code} - {response.text}")
+                return Response(f"Edge-TTS API returned error: {response.status_code}", status_code=500)
             
             # Return complete audio bytes as a standard HTTP response
             return Response(content=response.content, media_type="audio/mpeg")
     except Exception as e:
-        print(f"Connection error to ElevenLabs: {e}")
-        return Response(f"Failed to connect to ElevenLabs: {e}", status_code=500)
+        print(f"Connection error to Edge-TTS: {e}")
+        return Response(f"Failed to connect to Edge-TTS: {e}", status_code=500)
 
 @app.get("/voice/status")
-def get_voice_status():
-    api_key = get_elevenlabs_key()
-    return {"eleven_labs_active": api_key is not None}
+async def get_voice_status():
+    is_active = await check_edge_tts_active()
+    return {
+        "voice_active": is_active,
+        "eleven_labs_active": is_active
+    }
 
 if __name__ == "__main__":
     import uvicorn

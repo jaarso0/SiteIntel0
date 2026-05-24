@@ -31,15 +31,15 @@ export const UrlInput: React.FC<UrlInputProps> = ({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 mt-6">
+    <div className="w-full max-w-[640px] mx-auto mt-6 font-sans">
       <form
         onSubmit={handleSubmit}
-        className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col md:flex-row gap-4 items-center shadow-lg"
+        className="flex flex-col md:flex-row gap-3 items-center bg-transparent border-none p-0"
       >
-        <div className="w-full relative flex-1">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-            {/* World / Web icon */}
-            <svg className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-full relative flex-1 h-[48px]">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[rgba(255,255,255,0.3)]">
+            {/* World / Web icon 16px */}
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
           </div>
@@ -47,53 +47,31 @@ export const UrlInput: React.FC<UrlInputProps> = ({
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste target website URL (e.g. https://www.prephelp.in)..."
+            placeholder="Paste target website URL (e.g. https://www.stepsai.co)..."
             disabled={isLoading}
-            className="w-full pl-11 pr-4 py-3.5 bg-black/30 border border-white/10 hover:border-white/15 focus:border-purple-500 rounded-xl text-gray-100 placeholder-gray-500 focus:outline-none transition-all duration-300 tracking-wide text-sm font-sans focus:ring-1 focus:ring-purple-500/30"
+            className="w-full h-full pl-10 pr-4 py-2 bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded-[12px] text-[14px] text-[#F0EDE8] placeholder-[rgba(255,255,255,0.25)] focus:outline-none focus:border-[rgba(123,94,167,0.6)] focus:ring-3 focus:ring-[rgba(123,94,167,0.12)] transition-all duration-150 disabled:cursor-not-allowed disabled:bg-transparent"
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={isLoading || !url.trim()}
-          className={`glow-button px-7 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-sm font-semibold tracking-wide flex items-center gap-3 transition-all duration-300 shadow-md shadow-purple-600/20 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed`}
-        >
-          {isLoading ? (
-            <>
-              {/* Spinner */}
-              <svg className="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Architecting...
-            </>
-          ) : (
-            <>
-              {/* Wand / Bolt icon */}
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              Crawl & Architect
-            </>
-          )}
-        </button>
-
-        {hasKb && (
+        <div className="flex gap-2 shrink-0">
           <button
-            type="button"
-            onClick={onDeployClick}
-            className={`glow-button px-7 py-3.5 bg-gradient-to-r ${
-              isDeployActive
-                ? "from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 ring-2 ring-cyan-500/50"
-                : "from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 shadow-teal-600/20"
-            } text-white rounded-xl text-sm font-semibold tracking-wide flex items-center gap-3 transition-all duration-300 shadow-md active:scale-95 cursor-pointer`}
+            type="submit"
+            disabled={isLoading || !url.trim()}
+            className="premium-btn h-[48px] px-5 bg-gradient-to-br from-[#7B5EA7] to-[#5B3F8A] text-white text-[14px] font-medium border-none shadow-[0_4px_20px_rgba(123,94,167,0.35)] hover:brightness-[1.1] hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.98] transition-all duration-150 disabled:from-[#161616] disabled:to-[#161616] disabled:text-[rgba(255,255,255,0.2)] disabled:cursor-not-allowed disabled:shadow-none"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            <span>{isDeployActive ? "Viewing Deploy Hub" : "🚀 Deploy Agent"}</span>
+            {isLoading ? "Architecting..." : "Crawl & Architect"}
           </button>
-        )}
+
+          {hasKb && (
+            <button
+              type="button"
+              onClick={onDeployClick}
+              className="premium-btn h-[48px] px-5 bg-transparent border border-[rgba(255,255,255,0.15)] text-[#F0EDE8] text-[14px] font-medium hover:bg-[rgba(255,255,255,0.06)] hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.98] transition-all duration-150"
+            >
+              <span>{isDeployActive ? "Viewing Deploy Hub" : "Deploy Agent"}</span>
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );

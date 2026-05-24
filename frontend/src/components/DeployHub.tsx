@@ -9,6 +9,11 @@ const API_BASE = "http://localhost:8080";
 
 export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
   const [activeSubTab, setActiveSubTab] = useState<"sandbox" | "widget" | "twilio">("sandbox");
+
+  const siteUrl = kb?.kb_articles?.[0]?.source_urls?.[0] || "";
+  const companyName = siteUrl
+    ? siteUrl.replace(/^https?:\/\/(www\.)?/, "").split("/")[0].split(".")[0].toUpperCase()
+    : "STEPSAI";
   
   // Call sandbox states
   const [callState, setCallState] = useState<"idle" | "dialing" | "connected" | "disconnected">("idle");
@@ -18,8 +23,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
   const [isAiStreaming, setIsAiStreaming] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [elevenLabsActive, setElevenLabsActive] = useState(false);
-  const [puterActive, setPuterActive] = useState(false);
+  const [voiceActive, setVoiceActive] = useState(false);
 
   const recognitionRef = useRef<any>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -28,26 +32,14 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
   const captionsEndRef = useRef<HTMLDivElement | null>(null);
   const activeCallStateRef = useRef(callState);
 
-  // Check ElevenLabs & Puter availability on mount
+  // Check voice synthesis availability on mount
   useEffect(() => {
     fetch(`${API_BASE}/voice/status`)
       .then((res) => res.json())
       .then((data) => {
-        setElevenLabsActive(data.eleven_labs_active || false);
+        setVoiceActive(data.voice_active || data.eleven_labs_active || false);
       })
-      .catch((e) => console.log("ElevenLabs voice is offline.", e));
-
-    if ((window as any).puter) {
-      setPuterActive(true);
-    } else {
-      const interval = setInterval(() => {
-        if ((window as any).puter) {
-          setPuterActive(true);
-          clearInterval(interval);
-        }
-      }, 500);
-      return () => clearInterval(interval);
-    }
+      .catch((e) => console.log("Voice synthesis service is offline.", e));
   }, []);
 
   // Sync ref to call state for async browser speech events
@@ -95,12 +87,6 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
-
-  // Derive target business title
-  const siteUrl = kb?.kb_articles?.[0]?.source_urls?.[0] || "";
-  const companyName = siteUrl
-    ? siteUrl.replace(/^https?:\/\/(www\.)?/, "").split("/")[0].split(".")[0].toUpperCase()
-    : "YOUR WEBSITE";
 
   // Setup browser Speech Recognition
   const initSpeechRecognition = () => {
@@ -164,7 +150,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
       setCaptions((prev) => [...prev, { sender: "system", text: "Voice Connection Established." }]);
       
       // Speak greeting
-      const greeting = `Hello! Thanks for calling the ${companyName} A.I. support line. How can I help you today with pricing, refunds, or product details?`;
+      const greeting = `Hello! Thanks for calling the ${companyName} AI support line. How can I help you today with pricing, refunds, or product details?`;
       setCaptions((prev) => [...prev, { sender: "ai", text: greeting }]);
       speakText(greeting);
     }, 1800);
@@ -231,51 +217,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
       window.speechSynthesis.speak(utterance);
     };
 
-    const puter = (window as any).puter;
-
-    if (puterActive && puter && puter.ai && typeof puter.ai.txt2speech === "function") {
-      try {
-        puter.ai.txt2speech(filteredText, {
-          provider: "elevenlabs",
-          voice: "21m00Tcm4TlvDq8ikWAM",
-          model: "eleven_multilingual_v2"
-        })
-        .then((audio: any) => {
-          audioRef.current = audio;
-
-          audio.onplay = () => {
-            setIsSpeaking(true);
-          };
-
-          audio.onended = () => {
-            setIsSpeaking(false);
-            audioRef.current = null;
-            if (activeCallStateRef.current === "connected" && !isMuted) {
-              triggerListening();
-            }
-          };
-
-          audio.onerror = (e: any) => {
-            console.warn("Puter ElevenLabs audio play failed, falling back to browser synthesis.", e);
-            audioRef.current = null;
-            runFallbackSpeechSynthesis();
-          };
-
-          audio.play().catch((e: any) => {
-            console.warn("Puter ElevenLabs play execution failed, falling back.", e);
-            audioRef.current = null;
-            runFallbackSpeechSynthesis();
-          });
-        })
-        .catch((err: any) => {
-          console.warn("Puter.js txt2speech call failed, falling back.", err);
-          runFallbackSpeechSynthesis();
-        });
-      } catch (e) {
-        console.warn("Puter.js txt2speech failed, falling back.", e);
-        runFallbackSpeechSynthesis();
-      }
-    } else if (elevenLabsActive) {
+    if (voiceActive) {
       try {
         const audioUrl = `${API_BASE}/voice/tts?text=${encodeURIComponent(filteredText)}`;
         const audio = new Audio(audioUrl);
@@ -294,18 +236,18 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
         };
 
         audio.onerror = (e) => {
-          console.warn("ElevenLabs audio play failed, falling back to browser synthesis.", e);
+          console.warn("Voice service audio play failed, falling back to browser synthesis.", e);
           audioRef.current = null;
           runFallbackSpeechSynthesis();
         };
 
         audio.play().catch((e) => {
-          console.warn("ElevenLabs play execution failed, falling back.", e);
+          console.warn("Voice service play execution failed, falling back.", e);
           audioRef.current = null;
           runFallbackSpeechSynthesis();
         });
       } catch (e) {
-        console.warn("ElevenLabs audio construction failed, falling back.", e);
+        console.warn("Voice service audio construction failed, falling back.", e);
         runFallbackSpeechSynthesis();
       }
     } else {
@@ -425,7 +367,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
 <script>
   window.SiteIntelWidgetConfig = {
     jobId: "${jobId || 'your-job-id'}",
-    theme: "cyber-purple",
+    theme: "minimal-dark",
     greeting: "Welcome! I am fully trained on our documentation. Ask me anything!"
   };
 </script>
@@ -434,63 +376,63 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
   const twilioUrl = `http://localhost:8080/twilio/voice?job_id=${jobId || "your-job-id"}`;
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 mt-2 min-h-[500px]">
+    <div className="flex flex-col lg:flex-row gap-6 mt-2 min-h-[500px] font-sans">
       {/* Left panel — Channels Selector */}
-      <div className="w-full lg:w-1/2 flex flex-col gap-5">
-        <div className="glass-panel border border-white/5 rounded-2xl p-4 flex gap-2.5 bg-black/25">
+      <div className="w-full lg:w-1/2 flex flex-col gap-5 border-r border-[rgba(255,255,255,0.06)] pr-6">
+        <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.07)] p-4 flex gap-2.5 rounded-[14px]">
           {[
-            { id: "sandbox", label: "📞 Live Voice Sandbox", desc: "Test voice loop" },
-            { id: "widget", label: "💬 Embed Chatbot", desc: "Add to website" },
-            { id: "twilio", label: "📱 Twilio Live Phone", desc: "Deploy support line" },
+            { id: "sandbox", label: "Live Voice Sandbox", desc: "Test voice loop" },
+            { id: "widget", label: "Embed Chatbot", desc: "Add to website" },
+            { id: "twilio", label: "Twilio Live Phone", desc: "Deploy support line" },
           ].map((subTab) => (
             <button
               key={subTab.id}
               onClick={() => setActiveSubTab(subTab.id as any)}
-              className={`flex-1 p-3 rounded-xl transition-all duration-300 text-left ${
+              className={`flex-1 p-3 rounded-[10px] transition-all duration-150 text-left border cursor-pointer ${
                 activeSubTab === subTab.id
-                  ? "bg-purple-600/15 border border-purple-500/30 text-white shadow-lg shadow-purple-500/5"
-                  : "bg-white/[0.02] border border-white/5 text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                  ? "bg-[rgba(123,94,167,0.15)] border-[#7B5EA7] text-[#F0EDE8]"
+                  : "bg-transparent border-transparent text-[rgba(255,255,255,0.4)] hover:text-[#F0EDE8]"
               }`}
             >
-              <h4 className="text-xs font-bold tracking-wide">{subTab.label}</h4>
-              <p className="text-[9px] text-muted mt-0.5">{subTab.desc}</p>
+              <h4 className="text-xs font-mono font-semibold tracking-wide">{subTab.label}</h4>
+              <p className="text-[9px] text-[rgba(255,255,255,0.4)] mt-0.5 font-normal">{subTab.desc}</p>
             </button>
           ))}
         </div>
 
         {/* Tab content 1: Widget */}
         {activeSubTab === "widget" && (
-          <div className="glass-panel border border-white/5 rounded-3xl p-6 bg-black/10 flex flex-col gap-4 flex-1">
+          <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.07)] p-6 flex flex-col gap-4 flex-1 rounded-[14px]">
             <div>
-              <h3 className="font-heading font-bold text-gray-100 text-sm md:text-base flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse"></span>
+              <h3 className="font-mono font-semibold text-[#F0EDE8] text-[11px] tracking-[0.12em] uppercase flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#7B5EA7]"></span>
                 Grounded HTML Chat Widget
               </h3>
-              <p className="text-xs text-muted mt-1 leading-relaxed">
+              <p className="text-xs text-[rgba(255,255,255,0.4)] mt-1 leading-relaxed font-normal">
                 Add this pre-built conversational widget to your website's primary layout. It connects to your vector indices automatically.
               </p>
             </div>
 
             <div className="flex flex-col gap-2 relative">
-              <div className="flex justify-between items-center bg-black/35 px-4 py-2 rounded-t-xl border-b border-white/5">
-                <span className="text-[10px] uppercase font-bold tracking-wider font-mono text-cyan-400">Embed Snippet</span>
+              <div className="flex justify-between items-center bg-[rgba(255,255,255,0.02)] px-4 py-2 border border-[rgba(255,255,255,0.07)] border-b-0 rounded-t-[6px]">
+                <span className="text-[10px] uppercase font-semibold tracking-wider font-mono text-[rgba(255,255,255,0.3)]">Embed Snippet</span>
                 <button
                   onClick={() => handleCopy(widgetScript, "widget")}
-                  className="text-[10px] font-semibold text-purple-400 hover:text-purple-300 transition"
+                  className="text-[10px] font-mono font-semibold text-[#7B5EA7] bg-transparent border-none cursor-pointer hover:underline"
                 >
-                  {copiedText === "widget" ? "✓ Copied!" : "📋 Copy Code"}
+                  {copiedText === "widget" ? "Copied" : "Copy Code"}
                 </button>
               </div>
-              <pre className="bg-black/30 p-4 rounded-b-xl border border-t-0 border-white/5 font-mono text-[10px] leading-relaxed text-purple-300 overflow-x-auto select-all max-h-[160px]">
+              <pre className="bg-[rgba(255,255,255,0.02)] p-4 rounded-b-[6px] border border-[rgba(255,255,255,0.07)] font-mono text-[10px] leading-relaxed text-[#7B5EA7] overflow-x-auto select-all max-h-[160px]">
                 {widgetScript}
               </pre>
             </div>
 
-            <div className="border-t border-white/5 pt-4">
-              <h4 className="text-xs font-bold text-gray-200 mb-2">How to install:</h4>
-              <ul className="text-xs text-muted flex flex-col gap-1.5 list-disc pl-4">
+            <div className="border-t border-[rgba(255,255,255,0.06)] pt-4">
+              <h4 className="text-xs font-mono font-semibold text-[#F0EDE8] mb-2 uppercase">How to install:</h4>
+              <ul className="text-xs text-[rgba(255,255,255,0.4)] flex flex-col gap-1.5 list-disc pl-4 font-normal">
                 <li>Copy the snippet provided above.</li>
-                <li>Paste it right before the closing <code className="text-purple-400 text-[10px] bg-white/5 px-1 py-0.5 rounded font-mono">&lt;/body&gt;</code> tag on your pages.</li>
+                <li>Paste it right before the closing body tag on your pages.</li>
                 <li>Your customer chat icon will render automatically at the bottom right.</li>
               </ul>
             </div>
@@ -499,107 +441,112 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
 
         {/* Tab content 2: Twilio */}
         {activeSubTab === "twilio" && (
-          <div className="glass-panel border border-white/5 rounded-3xl p-6 bg-black/10 flex flex-col gap-5 flex-1">
+          <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.07)] p-6 flex flex-col gap-5 flex-1 rounded-[14px]">
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="font-heading font-bold text-gray-100 text-sm md:text-base flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse"></span>
+                <h3 className="font-mono font-semibold text-[#F0EDE8] text-[11px] tracking-[0.12em] uppercase flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#7B5EA7]"></span>
                   Twilio Live Support Line Setup
                 </h3>
-                <p className="text-xs text-muted mt-1 leading-relaxed">
+                <p className="text-xs text-[rgba(255,255,255,0.4)] mt-1 leading-relaxed font-normal">
                   Route actual landline or mobile voice calls to your grounded RAG AI Agent instantly.
                 </p>
               </div>
-              <span className="px-2.5 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20 text-[9px] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span> Live Node
+              <span className="px-2.5 py-1 bg-[rgba(255,255,255,0.05)] text-[#00E5CC] border border-[rgba(0,229,204,0.2)] text-[9px] font-mono font-semibold uppercase tracking-wider flex items-center gap-1.5 rounded">
+                Live Node
               </span>
             </div>
 
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl flex flex-col gap-3">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-muted font-bold">1. Twilio Request Webhook URL:</span>
+            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.07)] p-4 rounded-[6px] flex flex-col gap-3">
+              <div className="flex justify-between items-center text-xs font-mono">
+                <span className="text-[rgba(255,255,255,0.3)] font-semibold">1. Webhook URL</span>
                 <button
                   onClick={() => handleCopy(twilioUrl, "twilio")}
-                  className="text-cyan-400 hover:text-cyan-300 font-semibold"
+                  className="text-[#7B5EA7] hover:underline bg-transparent border-none cursor-pointer"
                 >
-                  {copiedText === "twilio" ? "✓ Copied!" : "📋 Copy"}
+                  {copiedText === "twilio" ? "Copied" : "Copy"}
                 </button>
               </div>
               <input
                 type="text"
                 readOnly
                 value={twilioUrl}
-                className="w-full bg-black/35 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-cyan-400 select-all"
+                className="w-full bg-transparent border border-[rgba(255,255,255,0.1)] rounded-[6px] px-3 py-2 text-xs font-mono text-[#7B5EA7] select-all outline-none"
               />
             </div>
 
-            <div className="border-t border-white/5 pt-4 flex flex-col gap-3">
-              <h4 className="text-xs font-bold text-gray-200">🚀 Setting up in Twilio Console (5 Minutes):</h4>
-              <ol className="text-xs text-muted flex flex-col gap-2.5 list-decimal pl-4">
-                <li>Log in to your <strong>Twilio Console</strong>.</li>
-                <li>Navigate to <strong>Phone Numbers</strong> &gt; <strong>Active Numbers</strong>.</li>
-                <li>Select your configured phone number (or purchase a trial support number).</li>
-                <li>Scroll down to the <strong>Voice &amp; Fax</strong> config panel.</li>
-                <li>Under <strong>"A Call Comes In"</strong>, select <strong>Webhook</strong>.</li>
-                <li>Paste your copyable Webhook URL in the textbox and click **Save**.</li>
+            <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 flex flex-col gap-3">
+              <h4 className="text-xs font-mono font-semibold text-[#F0EDE8] uppercase">Setting up in Twilio Console:</h4>
+              <ol className="text-xs text-[rgba(255,255,255,0.4)] flex flex-col gap-2.5 list-decimal pl-4 font-normal">
+                <li>Log in to your Twilio Console.</li>
+                <li>Navigate to Phone Numbers &gt; Active Numbers.</li>
+                <li>Select your configured phone number.</li>
+                <li>Scroll down to the Voice &amp; Fax config panel.</li>
+                <li>Under "A Call Comes In", select Webhook.</li>
+                <li>Paste your copyable Webhook URL in the textbox and click Save.</li>
               </ol>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-cyan-500/5 border border-cyan-500/10 text-[11px] text-cyan-400 leading-relaxed">
-              <strong>💡 Pro Tip:</strong> Since your local server is running on <code className="font-mono text-white">localhost</code>, use a tunneling tool like <strong>ngrok</strong> (e.g., <code className="font-mono text-white bg-black/30 px-1 py-0.5 rounded">ngrok http 8080</code>) to generate a public HTTPS URL, then swap `http://localhost:8080` for your ngrok domain in the webhook path!
+            <div className="p-3.5 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.07)] text-[11px] text-[rgba(255,255,255,0.4)] leading-relaxed font-mono rounded-[6px]">
+              Pro Tip: Since your local server is running on localhost, use a tunneling tool like ngrok (e.g. ngrok http 8080) to generate a public HTTPS URL, then swap http://localhost:8080 for your ngrok domain in the webhook path.
             </div>
           </div>
         )}
 
         {/* Tab content 3: Sandbox */}
         {activeSubTab === "sandbox" && (
-          <div className="glass-panel border border-white/5 rounded-3xl p-6 bg-black/10 flex flex-col gap-4 flex-1 justify-between">
+          <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.07)] p-6 flex flex-col gap-4 flex-1 justify-between rounded-[14px]">
             <div>
-              <h3 className="font-heading font-bold text-gray-100 text-sm md:text-base flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse"></span>
+              <h3 className="font-mono font-semibold text-[#F0EDE8] text-[11px] tracking-[0.12em] uppercase flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#7B5EA7]"></span>
                 Browser Voice Agent Sandbox
               </h3>
-              <p className="text-xs text-muted mt-1 leading-relaxed">
+              <p className="text-xs text-[rgba(255,255,255,0.4)] mt-1 leading-relaxed font-normal">
                 Test the exact conversational feel and accuracy of your website's voice line instantly within the browser using mock phone controls.
               </p>
             </div>
 
-            <div className="bg-purple-950/5 border border-purple-500/10 rounded-2xl p-4 flex flex-col gap-2">
-              <h4 className="text-xs font-bold text-purple-300">Sandbox Capabilities:</h4>
-              <ul className="text-xs text-muted flex flex-col gap-1.5 list-disc pl-4">
-                <li><strong>Voice Recognition:</strong> Hears microphone speech inputs natively.</li>
-                <li><strong>Voice Synthesis:</strong> Binds and synthesizes answers via speech engines.</li>
-                <li><strong>Grounding:</strong> Direct connection to your crawled knowledge database.</li>
+            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.07)] rounded-[6px] p-4 flex flex-col gap-2 font-mono">
+              <h4 className="text-xs font-semibold text-[#F0EDE8] uppercase">Sandbox Capabilities:</h4>
+              <ul className="text-xs text-[rgba(255,255,255,0.4)] flex flex-col gap-1.5 list-disc pl-4 font-normal">
+                <li>Voice Recognition: Hears microphone speech inputs natively.</li>
+                <li>Voice Synthesis: Binds and synthesizes answers via speech engines.</li>
+                <li>Grounding: Direct connection to your crawled knowledge database.</li>
               </ul>
             </div>
 
-            <div className="flex items-center gap-3 bg-black/35 p-3 rounded-2xl border border-white/5 text-[11px] text-muted">
-              <svg className="w-4 h-4 text-purple-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>Click <strong>"Simulate Phone Call"</strong> on the dialer board on the right to start speaking.</span>
+            <div className="flex items-center gap-3 bg-[rgba(255,255,255,0.02)] p-3 rounded-[6px] border border-[rgba(255,255,255,0.07)] text-[11px] text-[rgba(255,255,255,0.4)] font-mono">
+              <span>Click "Simulate Phone Call" on the dialer board on the right to start speaking.</span>
             </div>
           </div>
         )}
       </div>
 
       {/* Right panel — Dialer device mockup */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center">
-        <div className="w-full max-w-[340px] aspect-[9/18] rounded-[42px] border-4 border-white/10 bg-[#090b10] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden flex flex-col justify-between p-6">
+      <div className="w-full lg:w-1/2 flex items-center justify-center pl-6">
+        {/* Phone Frame Mockup (320px x 620px) */}
+        <div 
+          className="relative overflow-hidden flex flex-col justify-between p-6"
+          style={{
+            width: "320px",
+            height: "620px",
+            background: "#0E0E12",
+            border: "1.5px solid rgba(255, 255, 255, 0.12)",
+            borderRadius: "44px",
+            boxShadow: "0 0 0 1px rgba(255, 255, 255, 0.04), 0 40px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08)"
+          }}
+        >
           
           {/* Top Notch design */}
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 w-32 h-4.5 bg-black rounded-full z-20 flex items-center justify-center">
-            <div className="w-2.5 h-2.5 rounded-full bg-neutral-900 border border-white/[0.04]"></div>
-            <div className="w-10 h-1 bg-neutral-900 rounded-full ml-4"></div>
-          </div>
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[100px] h-[6px] rounded-[3px] bg-[rgba(255,255,255,0.15)] z-20 mt-[14px]"></div>
 
-          {/* Top Info Bar */}
-          <div className="flex justify-between items-center text-[10px] font-mono text-muted tracking-wider mt-1 relative z-10">
+          {/* Top Info Bar: 10px DM Sans, color 0.5 */}
+          <div className="flex justify-between items-center text-[10px] font-mono text-[rgba(255,255,255,0.5)] mt-3 relative z-10">
             <span>9:41 AM</span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <span>5G</span>
-              <div className="w-5 h-2.5 border border-white/20 rounded-sm p-0.5 flex">
-                <div className="w-full h-full bg-green-500 rounded-xs"></div>
+              <div className="w-[14px] h-[7px] border border-[rgba(255,255,255,0.2)] rounded-sm p-[1px] flex items-center">
+                <div className="w-full h-full bg-[#00E5CC] rounded-xs"></div>
               </div>
             </div>
           </div>
@@ -608,41 +555,43 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
           <div className="flex-1 flex flex-col justify-between my-5 relative z-10 max-h-[460px]">
             
             {/* Caller identity */}
-            <div className="text-center mt-3">
-              <h2 className="text-xs font-bold uppercase tracking-widest text-purple-400 font-mono flex items-center justify-center gap-1.5">
-                <span>SITEINTEL VOICE LINE</span>
-                {(puterActive || elevenLabsActive) && (
-                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase animate-pulse border tracking-normal leading-none select-none ${
-                    puterActive
-                      ? "bg-purple-500/15 text-purple-400 border-purple-500/30"
-                      : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-                  }`}>
-                    {puterActive ? "Puter ElevenLabs" : "RealVoice"}
-                  </span>
-                )}
+            <div className="text-center mt-3 font-sans">
+              <h2 className="text-[8px] font-display font-semibold uppercase tracking-[0.18em] text-[rgba(255,255,255,0.3)]">
+                SITEINTEL VOICE LINE
               </h2>
-              <h1 className="text-lg font-heading font-extrabold text-gray-200 mt-1.5 truncate max-w-[260px] mx-auto">{companyName}</h1>
+              <h1 className="text-[22px] font-display font-bold text-[#F0EDE8] mt-1 truncate max-w-[200px] mx-auto">{companyName}</h1>
               
-              {callState === "idle" && <p className="text-[10px] text-muted mt-1 uppercase font-semibold">Offline</p>}
-              {callState === "dialing" && <p className="text-[10px] text-cyan-400 mt-1 uppercase font-bold animate-pulse">Calling...</p>}
-              {callState === "connected" && (
-                <div className="flex flex-col items-center gap-1 mt-1">
-                  <p className="text-[10px] text-green-400 font-bold uppercase tracking-wider">Connected</p>
-                  <p className="text-xs font-mono text-gray-400 font-bold">{formatTime(callDuration)}</p>
-                </div>
-              )}
-              {callState === "disconnected" && <p className="text-[10px] text-red-500 mt-1 uppercase font-bold">Ended</p>}
+              <div className="flex justify-center mt-2">
+                {callState === "idle" || callState === "disconnected" ? (
+                  <span className="text-[8px] font-sans font-normal uppercase tracking-wide bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.3)] rounded-[20px] px-2.5 py-1">
+                    OFFLINE
+                  </span>
+                ) : callState === "dialing" ? (
+                  <span className="text-[8px] font-sans font-semibold uppercase tracking-wide bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.2)] text-[#7B5EA7] rounded-[20px] px-2.5 py-1 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#7B5EA7] animate-pulse"></span>
+                    DIALING...
+                  </span>
+                ) : (
+                  <div className="flex flex-col items-center gap-1 font-mono">
+                    <span className="text-[8px] font-sans font-semibold uppercase tracking-wide bg-[rgba(0,229,204,0.08)] border border-[rgba(0,229,204,0.2)] text-[#00E5CC] rounded-[20px] px-2.5 py-1 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#00E5CC] animate-statusPulse"></span>
+                      LIVE
+                    </span>
+                    <span className="text-[10px] text-[rgba(255,255,255,0.4)] font-semibold">{formatTime(callDuration)}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Simulated Audio Visualizer (Waveform) */}
-            <div className="h-28 flex items-center justify-center gap-1.5 my-4">
+            {/* Visualizer Waveform */}
+            <div className="h-24 flex items-center justify-center gap-1 my-4">
               {callState === "connected" && (isSpeaking || isListening || isAiStreaming) ? (
-                <div className="flex items-center gap-1.5 h-16">
+                <div className="flex items-center gap-1 h-12">
                   {[1, 2, 3, 4, 5, 6, 7].map((bar) => {
                     const animationDelay = `${bar * 0.15}s`;
-                    let color = "bg-purple-500";
-                    if (isListening) color = "bg-red-500";
-                    if (isAiStreaming) color = "bg-cyan-400";
+                    let color = "bg-[#7B5EA7]";
+                    if (isListening) color = "bg-[#ef4444]";
+                    if (isAiStreaming) color = "bg-[#00E5CC]";
                     return (
                       <div
                         key={bar}
@@ -654,15 +603,15 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 h-2 justify-center">
-                  <div className="w-12 h-1 bg-white/10 rounded-full"></div>
+                  <div className="w-8 h-0.5 bg-[rgba(255,255,255,0.15)] rounded-full"></div>
                 </div>
               )}
             </div>
 
-            {/* Closed Caption scrollable viewer */}
-            <div className="flex-1 max-h-[140px] bg-black/45 border border-white/5 rounded-2xl p-3 flex flex-col gap-2.5 overflow-y-auto font-mono text-[9px] leading-relaxed relative">
+            {/* Closed Caption transcript */}
+            <div className="flex-1 max-h-[140px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.07)] rounded-[6px] p-3 flex flex-col gap-2.5 overflow-y-auto font-mono text-[9px] leading-relaxed relative">
               {captions.length === 0 ? (
-                <div className="text-center text-muted my-auto italic flex flex-col items-center gap-1">
+                <div className="text-center text-[rgba(255,255,255,0.4)] my-auto italic flex flex-col items-center gap-1">
                   <span>No captions active</span>
                   <span>Initiate call to display</span>
                 </div>
@@ -678,29 +627,29 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
                         : "items-center"
                     }`}
                   >
-                    <span className={`text-[8px] uppercase tracking-wider font-bold mb-0.5 ${
+                    <span className={`text-[8px] uppercase tracking-wider font-semibold mb-0.5 ${
                       cap.sender === "user"
-                        ? "text-purple-400"
+                        ? "text-[#7B5EA7]"
                         : cap.sender === "ai"
-                        ? "text-cyan-400"
-                        : "text-muted"
+                        ? "text-[#00E5CC]"
+                        : "text-[rgba(255,255,255,0.4)]"
                     }`}>
-                      {cap.sender === "user" ? "👤 You" : cap.sender === "ai" ? "🤖 Agent" : "🛜 System"}
+                      {cap.sender === "user" ? "You" : cap.sender === "ai" ? "Agent" : "System"}
                     </span>
                     <div
-                      className={`px-2.5 py-1.5 rounded-xl max-w-[85%] ${
+                      className={`px-2.5 py-1.5 rounded-[4px] max-w-[85%] ${
                         cap.sender === "user"
-                          ? "bg-purple-600/20 text-purple-200 border border-purple-500/10 rounded-tr-none text-right"
+                          ? "bg-[rgba(123,94,167,0.1)] text-[#F0EDE8] border border-[rgba(123,94,167,0.15)] text-right"
                           : cap.sender === "ai"
-                          ? "bg-cyan-950/20 text-cyan-200 border border-cyan-500/10 rounded-tl-none text-left"
-                          : "bg-white/[0.02] text-muted text-center italic border border-white/5"
+                          ? "bg-[rgba(255,255,255,0.02)] text-[#F0EDE8] border border-[rgba(255,255,255,0.07)] text-left"
+                          : "bg-transparent text-[rgba(255,255,255,0.4)] text-center italic border border-[rgba(255,255,255,0.07)]"
                       }`}
                     >
                       {cap.text === "" && isAiStreaming ? (
                         <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping delay-100"></span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping delay-200"></span>
+                          <span className="w-1 h-1 rounded-full bg-[#00E5CC] animate-ping"></span>
+                          <span className="w-1 h-1 rounded-full bg-[#00E5CC] animate-ping delay-100"></span>
+                          <span className="w-1 h-1 rounded-full bg-[#00E5CC] animate-ping delay-200"></span>
                         </span>
                       ) : (
                         cap.text
@@ -710,70 +659,64 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
                 ))
               )}
               {isListening && !isSpeaking && !isAiStreaming && (
-                <div className="absolute bottom-2 left-3 flex items-center gap-1.5 text-[8px] text-red-400 animate-pulse font-bold uppercase">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Mic Listening...
+                <div className="absolute bottom-2 left-3 flex items-center gap-1 text-[8px] text-[#ef4444] animate-pulse font-semibold uppercase font-mono">
+                  Mic Listening
                 </div>
               )}
               <div ref={captionsEndRef} />
             </div>
           </div>
 
-          {/* Phone Controls (Keys / Dialing controls) */}
-          <div className="flex flex-col gap-4 relative z-10 border-t border-white/5 pt-4">
+          {/* Phone Controls & Bottom Simulate button */}
+          <div className="flex flex-col gap-4 relative z-10 border-t border-[rgba(255,255,255,0.06)] pt-4 font-mono">
             {callState === "connected" && (
               <div className="flex justify-around items-center">
                 {/* Mute button */}
                 <button
                   onClick={handleToggleMute}
-                  className={`p-3 rounded-full flex items-center justify-center transition ${
+                  className={`w-9 h-9 rounded-[6px] flex items-center justify-center transition border cursor-pointer ${
                     isMuted
-                      ? "bg-yellow-600/25 border border-yellow-500/40 text-yellow-400"
-                      : "bg-white/5 hover:bg-white/10 text-gray-300"
+                      ? "bg-[rgba(239,68,68,0.1)] border-[#ef4444] text-[#ef4444]"
+                      : "bg-transparent border-[rgba(255,255,255,0.07)] text-[rgba(255,255,255,0.4)] hover:text-[#F0EDE8]"
                   }`}
                   title={isMuted ? "Unmute Mic" : "Mute Mic"}
                 >
-                  {isMuted ? (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                    </svg>
-                  )}
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
                 </button>
 
                 {/* Speaker indicator status */}
-                <div className="text-center font-mono text-[8px] text-muted font-bold uppercase tracking-wider flex flex-col gap-0.5">
+                <div className="text-center text-[8px] text-[rgba(255,255,255,0.4)] font-semibold uppercase tracking-wider flex flex-col gap-0.5">
                   <span>Voice Engine</span>
-                  <span className={isSpeaking ? "text-cyan-400 animate-pulse" : "text-gray-500"}>
-                    {isSpeaking ? "🔊 Playing Response" : "💤 Idle"}
+                  <span className={isSpeaking ? "text-[#00E5CC]" : "text-[rgba(255,255,255,0.4)]"}>
+                    {isSpeaking ? "Playing" : "Idle"}
                   </span>
                 </div>
               </div>
             )}
 
-            {/* Primary Dial button */}
+            {/* Primary Dial button: 85% width, height 54px, gradient, radius 28px, shadow-violet */}
             <div className="flex justify-center">
               {callState === "idle" || callState === "disconnected" ? (
                 <button
                   onClick={handleStartCall}
-                  className="w-full py-3.5 px-6 rounded-full bg-gradient-to-r from-purple-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 hover:scale-[1.02] shadow-lg shadow-purple-600/10 active:scale-[0.98] transition cursor-pointer"
+                  className="premium-btn w-[85%] h-[54px] rounded-[28px] bg-gradient-to-br from-[#7B5EA7] to-[#00E5CC] text-white text-[13px] font-semibold uppercase tracking-[0.05em] flex items-center justify-center gap-2 border-none shadow-[0_8px_32px_rgba(123,94,167,0.4)] cursor-pointer"
                 >
-                  <svg className="w-4 h-4 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  <svg className="w-[18px] h-[18px] text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                   <span>Simulate Phone Call</span>
                 </button>
               ) : (
                 <button
                   onClick={handleEndCall}
-                  className="w-full py-3.5 px-6 rounded-full bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 hover:scale-[1.02] shadow-lg shadow-red-500/10 active:scale-[0.98] transition cursor-pointer animate-pulse"
+                  className="premium-btn w-[85%] h-[54px] rounded-[28px] bg-[#ef4444] text-white text-[13px] font-semibold uppercase tracking-[0.05em] flex items-center justify-center gap-2 border-none shadow-none cursor-pointer"
                 >
-                  <svg className="w-4 h-4 rotate-[135deg]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  <svg className="w-[18px] h-[18px] text-white rotate-[135deg]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
-                  <span>End Call Session</span>
+                  <span>End Call</span>
                 </button>
               )}
             </div>
