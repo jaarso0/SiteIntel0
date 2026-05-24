@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { DeployHub } from "./DeployHub";
 
 interface KbArticle {
   title: string;
@@ -42,10 +43,11 @@ interface KbData {
 
 interface KbViewerProps {
   kb: KbData | null;
+  jobId: string | null;
 }
 
-export const KbViewer: React.FC<KbViewerProps> = ({ kb }) => {
-  const [activeTab, setActiveTab] = useState<"articles" | "qa" | "audit" | "competitors" | "system">("articles");
+export const KbViewer: React.FC<KbViewerProps> = ({ kb, jobId }) => {
+  const [activeTab, setActiveTab] = useState<"articles" | "qa" | "audit" | "competitors" | "system" | "deploy">("articles");
   const [searchQuery, setSearchQuery] = useState("");
 
   if (!kb) {
@@ -115,6 +117,7 @@ export const KbViewer: React.FC<KbViewerProps> = ({ kb }) => {
             { id: "audit", label: "Auditor", count: (kb.inconsistencies?.length || 0) + (kb.staleness_flags?.length || 0) },
             { id: "competitors", label: "Market Gaps", count: kb.competitor_gaps?.length },
             { id: "system", label: "Agent Config" },
+            { id: "deploy", label: "🚀 Deploy" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -384,6 +387,11 @@ export const KbViewer: React.FC<KbViewerProps> = ({ kb }) => {
               {kb.system_prompt}
             </div>
           </div>
+        )}
+
+        {/* Tab 6: Deployed Agent Channels & Simulator */}
+        {activeTab === "deploy" && (
+          <DeployHub kb={kb} jobId={jobId} />
         )}
 
       </div>

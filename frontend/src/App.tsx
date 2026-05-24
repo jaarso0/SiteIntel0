@@ -183,7 +183,7 @@ function App() {
           </section>
         ) : (
           <section className="flex-1 flex flex-col mt-4 animate-fadeIn">
-            <KbViewer kb={kb} />
+            <KbViewer kb={kb} jobId={jobId} />
           </section>
         )}
       </main>
