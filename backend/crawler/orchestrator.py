@@ -4,14 +4,13 @@ import os
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
-# Ensure parent directory is in path for imports
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from crawler.extractor import fetch_and_extract
 from crawler.classifier import classify
 from store.db import get_db, save_page
 
-# Priority mapping for the PriorityQueue
 PRIORITY_VALUES = {
     "pricing": 1,
     "support": 2,
@@ -31,13 +30,10 @@ def extract_links(html: str, base_url: str) -> list[str]:
         soup = BeautifulSoup(html, "html.parser")
         for a in soup.find_all("a", href=True):
             href = a["href"].strip()
-            # Strip fragment / hash parameters
             href = href.split("#")[0]
             if not href:
                 continue
-            # Resolve relative URLs
             full_url = urljoin(base_url, href)
-            # Normalize trailing slashes
             if full_url.endswith("/"):
                 full_url = full_url[:-1]
             links.append(full_url)
@@ -49,16 +45,13 @@ async def crawl_site(seed_url: str, max_pages: int = 50):
     db = get_db()
     seed_url = seed_url.rstrip("/")
     domain = get_domain(seed_url)
-    
-    # We use an asyncio.PriorityQueue
-    # Queue items: (priority_int, url)
     queue = asyncio.PriorityQueue()
     await queue.put((0, seed_url))
     
     visited = set()
     crawled_count = 0
     
-    # Bounded concurrency: semaphore of 5
+
     sem = asyncio.Semaphore(5)
     
     async def worker():
@@ -67,7 +60,6 @@ async def crawl_site(seed_url: str, max_pages: int = 50):
             if queue.empty():
                 break
             try:
-                # Wait for next item
                 priority, url = await queue.get()
             except asyncio.QueueEmpty:
                 break
@@ -104,15 +96,14 @@ async def crawl_site(seed_url: str, max_pages: int = 50):
                         prio_val = PRIORITY_VALUES.get(link_type, 5)
                         await queue.put((prio_val, link))
                         
-            # Short sleep to prevent CPU hogging
+            
             await asyncio.sleep(0.1)
 
-    # Launch worker loop
+    
     await worker()
     print(f"\nCrawl finished. Crawled {crawled_count} pages.")
 
 def find_competitors(site_url: str) -> list[str]:
-    # Heuristics mapping for the demo and common platforms
     domain = get_domain(site_url).lower()
     if "prephelp" in domain:
         return ["byjus.com", "unacademy.com"]
@@ -121,7 +112,6 @@ def find_competitors(site_url: str) -> list[str]:
     return ["competitor1.com", "competitor2.com"]
 
 async def crawl_competitors(competitor_domains: list[str]) -> list[dict]:
-    # Crawl main/product pages of competitors
     competitor_pages = []
     for domain in competitor_domains:
         seed = f"https://{domain}" if not domain.startswith("http") else domain

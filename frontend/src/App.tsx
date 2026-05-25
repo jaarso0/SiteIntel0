@@ -5,6 +5,8 @@ import { ChatPanel } from "./components/ChatPanel";
 import { KbViewer } from "./components/KbViewer";
 import { DeployHub } from "./components/DeployHub";
 import { OnboardingFlow } from "./components/OnboardingFlow";
+import { LandingPage } from "./components/LandingPage";
+
 
 const API_BASE = "http://localhost:8080";
 
@@ -171,73 +173,18 @@ function App() {
             url={submittedUrl}
             kbReady={kb !== null}
             error={error}
+            status={status}
+            progress={progress}
             onComplete={() => {
               setShowOnboarding(false);
               setViewMode("chat");
             }}
           />
         ) : kb === null ? (
-          /* SaaS Hero Landing Page (when no URL crawled yet) */
-          <div className="flex-1 flex flex-col items-center justify-center py-12 max-w-4xl mx-auto text-center animate-fadeIn">
-            {/* Pulsing centered gradient lightning brandmark */}
-            <div className="w-12 h-12 flex items-center justify-center rounded-[16px] bg-gradient-to-br from-[#7B5EA7] to-[#00E5CC] text-white shadow-[0_8px_32px_rgba(123,94,167,0.3)] mb-8 animate-statusPulse">
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-              </svg>
-            </div>
-
-            <h1 className="font-display font-bold text-[36px] md:text-[44px] leading-tight text-[#F0EDE8] tracking-tight max-w-2xl">
-              Architect Grounded AI Agents Natively.
-            </h1>
-            
-            <p className="text-sm md:text-base text-[rgba(255,255,255,0.4)] max-w-xl mt-4 mb-10 leading-relaxed font-normal">
-              Turn any website into a high-fidelity voice and chat support line. Crawl pages, synthesize structured knowledge bases with Gemini 2.5 Flash, and go live in seconds.
-            </p>
-
-            {/* URL Input Bar centered directly under hero */}
-            <div className="w-full max-w-[640px]">
-              <UrlInput 
-                onCrawlStart={handleCrawlStart} 
-                isLoading={isLoading} 
-                hasKb={false}
-                onDeployClick={() => setViewMode("deploy")}
-                isDeployActive={false}
-              />
-            </div>
-
-            {/* Premium feature grid cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-16 w-full px-4">
-              {[
-                {
-                  title: "High-Performance Crawler",
-                  desc: "Playwright and BeautifulSoup render, scrape, and extract target domain hierarchies.",
-                  color: "border-l-2 border-[#7B5EA7]"
-                },
-                {
-                  title: "Local ChromaDB Vector RAG",
-                  desc: "Securely chunk, index, and query local embeddings with zero third-party data leakage.",
-                  color: "border-l-2 border-[#00E5CC]"
-                },
-                {
-                  title: "Sandbox & Deploy Hub",
-                  desc: "Instantly test voice sandbox calls, copy chat widget embeds, or hook Twilio trunks.",
-                  color: "border-l-2 border-[#F0EDE8]"
-                }
-              ].map((feat, idx) => (
-                <div
-                  key={idx}
-                  className={`premium-card p-5 text-left flex flex-col gap-2 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[rgba(255,255,255,0.05)] cursor-default ${feat.color}`}
-                >
-                  <h4 className="font-display font-bold text-xs uppercase tracking-wider text-[#F0EDE8]">
-                    {feat.title}
-                  </h4>
-                  <p className="text-[11px] text-[rgba(255,255,255,0.4)] leading-relaxed font-normal">
-                    {feat.desc}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <LandingPage
+            onCrawlStart={handleCrawlStart}
+            isLoading={isLoading}
+          />
         ) : (
           /* Active Grounded workspace (once url is successfully indexed) */
           <>

@@ -4,10 +4,19 @@ interface OnboardingFlowProps {
   url: string;
   kbReady: boolean;
   error: string | null;
+  status: string;
+  progress: number;
   onComplete: () => void;
 }
 
-export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, error, onComplete }) => {
+export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ 
+  url, 
+  kbReady, 
+  error, 
+  status, 
+  progress, 
+  onComplete 
+}) => {
   const [phase, setPhase] = useState<1 | 2 | 3 | "final">(1);
   const [isCollapsingPhase1, setIsCollapsingPhase1] = useState(false);
   const [isCompressingPhase2, setIsCompressingPhase2] = useState(false);
@@ -18,9 +27,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
   // Phase 2: embedding count state
   const [embeddingsCount, setEmbeddingsCount] = useState(0);
 
-
-
-  // Generate Crawling nodes coordinates (centered in 600x400 SVG box)
+  // Node graph coordinates (centered in 600x400 SVG box)
   const rootNode = { x: 300, y: 200, label: url };
   const nodes = [
     { id: 1, x: 160, y: 120, label: "/pricing" },
@@ -57,88 +64,97 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
     { title: "Getting Started · 6 chunks", color: "#00E5CC" },
   ];
 
-  // Step sequences
+  // Phase 1 crawling increment loops
   useEffect(() => {
-    // 1. Pages Crawled Bursts (starts at 1, ticks dynamically)
+    if (phase !== 1) return;
     const crawlInterval = setInterval(() => {
-      if (phase === 1) {
-        setPagesCrawled((prev) => {
-          if (prev >= 32) {
-            clearInterval(crawlInterval);
-            return 32;
-          }
-          const chance = Math.random();
-          if (chance > 0.7) return prev + Math.floor(Math.random() * 8) + 3; // burst
-          if (chance > 0.3) return prev + Math.floor(Math.random() * 2) + 1; // single
-          return prev;
-        });
-      }
+      setPagesCrawled((prev) => {
+        if (prev >= 32) {
+          clearInterval(crawlInterval);
+          return 32;
+        }
+        const chance = Math.random();
+        if (chance > 0.75) return prev + Math.floor(Math.random() * 4) + 2; // burst
+        if (chance > 0.4) return prev + 1; // single increment
+        return prev;
+      });
     }, 280);
 
-    // 2. Collapse Phase 1 early at 3600ms
-    const collapseP1Timer = setTimeout(() => {
-      setIsCollapsingPhase1(true);
-    }, 3600);
-
-    // 3. Advance to Phase 2 at 4000ms
-    const toPhase2Timer = setTimeout(() => {
-      setPhase(2);
-      setIsCollapsingPhase1(false);
-    }, 4000);
-
-    return () => {
-      clearInterval(crawlInterval);
-      clearTimeout(collapseP1Timer);
-      clearTimeout(toPhase2Timer);
-    };
-  }, []);
-
-  // Phase 2 timers
-  useEffect(() => {
-    if (phase !== 2) return;
-
-    // Fast embedding tick (Interval of 50ms adding 15-40 embeddings)
-    const embedInterval = setInterval(() => {
-      setEmbeddingsCount((prev) => {
-        if (prev >= 1800) {
-          clearInterval(embedInterval);
-          return 1842;
-        }
-        return prev + Math.floor(Math.random() * 25) + 15;
-      });
-    }, 50);
-
-    // Compress Phase 2 early at 2000ms (500ms before P3)
-    const compressP2Timer = setTimeout(() => {
-      setIsCompressingPhase2(true);
-    }, 2000);
-
-    // Advance to Phase 3 at 2500ms
-    const toPhase3Timer = setTimeout(() => {
-      setPhase(3);
-      setIsCompressingPhase2(false);
-      setEmbeddingsCount(1842); // make sure it matches target
-    }, 2500);
-
-    return () => {
-      clearInterval(embedInterval);
-      clearTimeout(compressP2Timer);
-      clearTimeout(toPhase3Timer);
-    };
+    return () => clearInterval(crawlInterval);
   }, [phase]);
 
-  // Phase 3 timers
+  // Phase Transition coordinator logic
+  useEffect(() => {
+    // Immediate error / failure handling
+    if (status === "failed" || error) {
+      setPhase("final");
+      return;
+    }
+
+    const isRAGStatus = ["building_kb", "auditing", "re-building_kb", "indexing"].includes(status);
+
+    if (status === "ready") {
+      if (phase === 1) {
+        setIsCollapsingPhase1(true);
+        const timer = setTimeout(() => {
+          setPhase(2);
+          setIsCollapsingPhase1(false);
+        }, 500);
+        return () => clearTimeout(timer);
+      } else if (phase === 2) {
+        // Wait 3.2 seconds for checklist to complete staggers & counters, then compress over 500ms
+        const compressTimer = setTimeout(() => {
+          setIsCompressingPhase2(true);
+          const transitionTimer = setTimeout(() => {
+            setPhase(3);
+            setIsCompressingPhase2(false);
+          }, 500);
+          return () => clearTimeout(transitionTimer);
+        }, 3200);
+        return () => clearTimeout(compressTimer);
+      }
+    } else if (isRAGStatus) {
+      if (phase === 1) {
+        setIsCollapsingPhase1(true);
+        const timer = setTimeout(() => {
+          setPhase(2);
+          setIsCollapsingPhase1(false);
+        }, 600);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [status, error, phase]);
+
+  // Smooth embedding increment synchronized with pipeline progress
+  useEffect(() => {
+    if (phase !== 2) return;
+    // Map progress (40% to 90%) to embedding scale
+    const targetEmbeddings = Math.min(1842, Math.floor(progress * 18.42));
+    
+    if (embeddingsCount < targetEmbeddings) {
+      const interval = setInterval(() => {
+        setEmbeddingsCount((prev) => {
+          if (prev >= targetEmbeddings) {
+            clearInterval(interval);
+            return targetEmbeddings;
+          }
+          // Smooth acceleration and deceleration
+          const diff = targetEmbeddings - prev;
+          const step = Math.ceil(diff / 8) + Math.floor(Math.random() * 3);
+          return Math.min(targetEmbeddings, prev + step);
+        });
+      }, 25);
+      return () => clearInterval(interval);
+    }
+  }, [progress, phase, embeddingsCount]);
+
+  // Phase 3 satisfying countdown timer
   useEffect(() => {
     if (phase !== 3) return;
-
-    // Phase 3 lasts 1500ms, then hold for 600ms before final CTA page
-    const toFinalTimer = setTimeout(() => {
+    const timer = setTimeout(() => {
       setPhase("final");
-    }, 2100);
-
-    return () => {
-      clearTimeout(toFinalTimer);
-    };
+    }, 2500); // 2.5 seconds of high-fidelity ripple
+    return () => clearTimeout(timer);
   }, [phase]);
 
   return (
@@ -147,11 +163,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
       {/* PHASE 1: CRAWLING */}
       {phase === 1 && (
         <div className={`flex flex-col items-center justify-center gap-6 w-full ${isCollapsingPhase1 ? "animate-collapseGraph" : "animate-fadeIn"}`}>
+          
           {/* Top Label */}
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00E5CC] animate-statusPulse"></span>
             <span className="text-[10px] font-medium tracking-[0.2em] text-[#00E5CC] uppercase">
-              CRAWLING
+              {status === "re-crawling" ? "TARGETED RE-CRAWLING" : "CRAWLING ACTIVE"}
             </span>
           </div>
 
@@ -184,7 +201,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
                       strokeDasharray={len}
                       strokeDashoffset={len}
                       style={{
-                        animation: `drawPath 400ms cubic-bezier(0.4, 0, 0.2, 1) ${idx * 300}ms forwards`
+                        animation: `drawPath 400ms cubic-bezier(0.4, 0, 0.2, 1) ${idx * 200}ms forwards`
                       }}
                     />
                     
@@ -195,7 +212,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
                         from={edge.x1} 
                         to={edge.x2} 
                         dur="1.5s" 
-                        begin={`${idx * 300 + 400}ms`} 
+                        begin={`${idx * 200 + 400}ms`} 
                         repeatCount="indefinite" 
                       />
                       <animate 
@@ -203,7 +220,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
                         from={edge.y1} 
                         to={edge.y2} 
                         dur="1.5s" 
-                        begin={`${idx * 300 + 400}ms`} 
+                        begin={`${idx * 200 + 400}ms`} 
                         repeatCount="indefinite" 
                       />
                       <animate
@@ -211,7 +228,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
                         from="0.9"
                         to="0.9"
                         dur="0.1s"
-                        begin={`${idx * 300 + 400}ms`}
+                        begin={`${idx * 200 + 400}ms`}
                         fill="freeze"
                       />
                     </circle>
@@ -242,7 +259,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
                   strokeWidth="1"
                   opacity="0"
                   style={{
-                    animation: `fadeIn 300ms ease-out ${idx * 300 + 350}ms forwards`
+                    animation: `fadeIn 300ms ease-out ${idx * 200 + 350}ms forwards`
                   }}
                 />
               ))}
@@ -264,7 +281,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
                 style={{
                   left: `${node.x}px`,
                   top: `${node.y + 10}px`,
-                  animation: `fadeIn 300ms ease-out ${idx * 300 + 400}ms forwards`
+                  animation: `fadeIn 300ms ease-out ${idx * 200 + 400}ms forwards`
                 }}
               >
                 {node.label}
@@ -279,49 +296,55 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
         </div>
       )}
 
-      {/* PHASE 2: ARCHITECTING */}
+      {/* PHASE 2: ARCHITECTING / RAG VECTORIZING */}
       {phase === 2 && (
         <div className={`flex flex-col items-center justify-center gap-6 w-full ${isCompressingPhase2 ? "animate-cardsCompress" : "animate-fadeIn"}`}>
+          
           {/* Top Label */}
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00E5CC] animate-statusPulse"></span>
             <span className="text-[10px] font-medium tracking-[0.2em] text-[#00E5CC] uppercase">
-              VECTORIZING
+              {status === "auditing" ? "QUALITY AUDITING REVIEWS" : status === "indexing" ? "VECTOR CHUNK INDEXING" : "GEMINI KB SYNTHESIS"}
             </span>
           </div>
 
           {/* Card Stack Container (Width 420px max) */}
           <div className="flex flex-col gap-2 w-full max-w-[420px] px-4 min-h-[310px] justify-center">
-            {cards.map((card, idx) => (
-              <div
-                key={idx}
-                className="animate-cardSlideUp flex items-center justify-between w-full h-[36px] px-4.5 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.07)] rounded-[8px]"
-                style={{ animationDelay: `${idx * 150}ms` }}
-              >
-                <div className="flex items-center gap-3">
-                  {/* Alternating left dot indicator */}
-                  <span 
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: card.color }}
-                  ></span>
-                  <span className="text-xs font-normal text-[rgba(255,255,255,0.5)]">
-                    {card.title}
-                  </span>
-                </div>
+            {cards.map((card, idx) => {
+              // Only reveal cards dynamically as backend progress climbs
+              const cardThreshold = 40 + idx * 6.25;
+              const isRevealed = progress >= cardThreshold;
 
-                {/* Staggered green tick check icon */}
-                <div 
-                  className="opacity-0 flex items-center justify-center text-[#00E5CC]"
-                  style={{
-                    animation: `fadeInCheck 300ms cubic-bezier(0.34, 1.56, 0.64, 1) ${idx * 150 + 400}ms forwards`
-                  }}
+              if (!isRevealed) return null;
+
+              return (
+                <div
+                  key={idx}
+                  className="animate-cardSlideUp flex items-center justify-between w-full h-[36px] px-4.5 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.07)] rounded-[8px]"
+                  style={{ animationDelay: `${idx * 160}ms` }}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <div className="flex items-center gap-3">
+                    <span 
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: card.color }}
+                    ></span>
+                    <span className="text-xs font-normal text-[rgba(255,255,255,0.5)]">
+                      {card.title}
+                    </span>
+                  </div>
+
+                  {/* Tick check icon once verified */}
+                  <div 
+                    className="animate-fadeInCheck flex items-center justify-center text-[#00E5CC]"
+                    style={{ animationDelay: `${idx * 160 + 350}ms` }}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Embedding Tickers */}
@@ -331,7 +354,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
         </div>
       )}
 
-      {/* PHASE 3: DEPLOYING */}
+      {/* PHASE 3: DEPLOYING / AGENT READY */}
       {phase === 3 && (
         <div className="flex flex-col items-center justify-center gap-6 w-full animate-fadeIn relative">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[200px] h-[200px] pointer-events-none">
@@ -346,30 +369,31 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
 
           {/* Agent ready text header */}
           <h2 className="opacity-0 font-display font-bold text-[14px] tracking-[0.15em] text-[#F0EDE8] uppercase mt-2"
-              style={{ animation: "fadeIn 350ms ease-out 600ms forwards" }}
+              style={{ animation: "fadeIn 350ms ease-out 400ms forwards" }}
           >
-            AGENT READY
+            FINALIZING AGENT
           </h2>
         </div>
       )}
 
-      {/* FINAL STATE: REVEAL */}
+      {/* FINAL STATE: REVEAL DASHBOARD ENTRY */}
       {phase === "final" && (
         <div className="flex flex-col items-center justify-center text-center animate-fadeIn max-w-[480px] px-6">
-          {/* Slower Breathing Large Orb */}
+          
+          {/* Breathing Large Orb */}
           <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#7B5EA7] to-[#00E5CC] animate-breathe shadow-[0_0_40px_rgba(123,94,167,0.45)]"></div>
 
           <h1 className="font-display font-bold text-[24px] text-[#F0EDE8] tracking-wide mt-6">
-            {error ? "Pipeline processing failed." : "Your agent is ready."}
+            {error ? "Pipeline synthesis failed." : "Your AI Agent is Ready."}
           </h1>
 
-          <p className="text-[13px] text-[rgba(255,255,255,0.4)] mt-2.5 mb-8 tracking-wide font-normal">
+          <p className="text-[13px] text-[rgba(255,255,255,0.45)] mt-2.5 mb-8 tracking-wide font-normal leading-relaxed">
             {error 
               ? `Error: ${error}` 
-              : <>Grounded on <span className="font-mono text-[12px] bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] px-1.5 py-0.5 rounded text-[rgba(255,255,255,0.65)]">{url}</span>. Zero hallucinations.</>}
+              : <>Grounded natively on <span className="font-mono text-[12px] bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] px-1.5 py-0.5 rounded text-[rgba(255,255,255,0.65)]">{url}</span>. ChromaDB indexing complete.</>}
           </p>
 
-          {/* Button sync with active knowledge database */}
+          {/* CTA actions */}
           {error ? (
             <button
               onClick={onComplete}
@@ -396,7 +420,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ url, kbReady, er
                 </>
               ) : (
                 <div className="flex items-center gap-2.5">
-                  {/* Loader */}
                   <div className="w-4 h-4 border-2 border-[rgba(255,255,255,0.2)] border-t-[rgba(255,255,255,0.8)] rounded-full animate-spin"></div>
                   <span>Finalizing Agent...</span>
                 </div>

@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from groq import Groq
 import httpx
 
-# Load environment variables
+
 load_dotenv(override=True)
 
 from crawler.orchestrator import crawl_site, find_competitors, crawl_competitors
@@ -25,7 +25,7 @@ from rag.retriever import index_chunks, search
 
 app = FastAPI(title="SiteIntel API")
 
-# Configure CORS for React development server
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -39,7 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory jobs tracking
+
 jobs = {}
 
 class CrawlRequest(BaseModel):
@@ -74,13 +74,13 @@ def get_chat_client():
 async def crawl_specific_urls(site_url: str, hints: list[str]) -> list[dict]:
     db = get_db()
     extra_pages = []
-    # Filter and crawl max 3 specific URLs flagged by auditor
+
     valid_hints = []
     for hint in hints:
         if not hint:
             continue
         hint_clean = hint.strip()
-        # Filter out natural language descriptions/topics (hints with spaces or overly long)
+       
         if " " in hint_clean or len(hint_clean) > 150:
             print(f"Skipping invalid auditor recrawl hint (looks like a topic description, not a URL/path): '{hint_clean}'")
             continue
@@ -112,7 +112,6 @@ async def run_pipeline(job_id: str, seed_url: str):
     db = get_db()
     jobs[job_id]["site_url"] = seed_url
     try:
-        # Check cache first for instant load
         cached_kb_json = get_kb_from_cache(db, seed_url)
         if cached_kb_json:
             print(f"Serving cached KB for {seed_url}")
@@ -120,7 +119,7 @@ async def run_pipeline(job_id: str, seed_url: str):
             jobs[job_id]["progress"] = 90
             jobs[job_id]["status"] = "indexing"
             
-            # Re-index cache into RAG just in case
+            
             all_chunks = []
             for article in kb.get("kb_articles", []):
                 chunks = chunk_article(article, seed_url, chunk_size=300, overlap=30)
@@ -133,14 +132,14 @@ async def run_pipeline(job_id: str, seed_url: str):
             save_active_job(db, job_id, seed_url, cached_kb_json)
             return
 
-        # Start primary crawl and competitor crawl concurrently
+        
         jobs[job_id]["status"] = "crawling"
         jobs[job_id]["progress"] = 10
         
         competitors = find_competitors(seed_url)
         print(f"Discovered competitors to analyze: {competitors}")
         
-        # Execute primary site crawl and competitor main page crawls in parallel
+        
         await asyncio.gather(
             crawl_site(seed_url, max_pages=20),
             crawl_competitors_task := asyncio.create_task(crawl_competitors(competitors))
@@ -155,12 +154,12 @@ async def run_pipeline(job_id: str, seed_url: str):
         jobs[job_id]["progress"] = 40
         jobs[job_id]["status"] = "building_kb"
         
-        # Build KB with both site content and competitor content
+        
         kb = build_kb(pages, competitor_pages)
         jobs[job_id]["progress"] = 70
         jobs[job_id]["status"] = "auditing"
         
-        # Audit KB
+        
         audit_res = audit(kb, pages)
         if audit_res["needs_recrawl"]:
             print(f"Quality audit flagged gaps. Re-crawling urls: {audit_res['recrawl_hints']}")
@@ -171,12 +170,12 @@ async def run_pipeline(job_id: str, seed_url: str):
                 jobs[job_id]["status"] = "re-building_kb"
                 kb = build_kb(pages, competitor_pages)
                 
-        # Save KB to cache
+       
         save_kb_to_cache(db, seed_url, json.dumps(kb))
         jobs[job_id]["progress"] = 85
         jobs[job_id]["status"] = "indexing"
         
-        # Index RAG
+       
         all_chunks = []
         for article in kb.get("kb_articles", []):
             chunks = chunk_article(article, seed_url, chunk_size=300, overlap=30)
@@ -224,7 +223,6 @@ async def stream_chat(message: str, use_kb: bool, system_prompt: str, site_url: 
     
     if provider == "groq":
         try:
-            # Construct the conversational messages array
             messages = [{"role": "system", "content": system}]
             messages.extend(history_list)
             messages.append({"role": "user", "content": message})
@@ -244,7 +242,7 @@ async def stream_chat(message: str, use_kb: bool, system_prompt: str, site_url: 
             
     elif provider == "gemini":
         try:
-            # Format system prompt, conversational turns, and user query for Gemini
+            
             prompt_parts = [f"SYSTEM INSTRUCTIONS:\n{system}\n"]
             for turn in history_list:
                 role_label = "USER" if turn["role"] == "user" else "ASSISTANT"
@@ -255,13 +253,12 @@ async def stream_chat(message: str, use_kb: bool, system_prompt: str, site_url: 
             response = client.generate_content(prompt, stream=True)
             for chunk in response:
                 try:
-                    # Safely access the text to avoid quick accessor crashes on safety/finish blocks
+                    
                     if chunk.candidates and chunk.candidates[0].content.parts:
                         text_part = chunk.text
                         if text_part:
                             yield text_part
                 except Exception as e:
-                    # Silence non-text chunk exceptions (e.g. final finish_reason metadata)
                     continue
                 await asyncio.sleep(0.01)
         except Exception as e:
@@ -269,7 +266,6 @@ async def stream_chat(message: str, use_kb: bool, system_prompt: str, site_url: 
             yield f"\n[Error streaming with Gemini: {e}]"
             
     else:
-        # Local mock streaming if no API keys are provided
         mock_response = f"[Grounding Check] Running in local mock mode (no API keys configured).\nQuery: '{message}'\n"
         if use_kb:
             mock_response += "Based on our indexed knowledge base, example.com is used for documentation and is not for operational purposes."
@@ -290,11 +286,9 @@ async def start_crawl(req: CrawlRequest):
         "progress": 0,
         "kb": None
     }
-    # Persist job startup mapping in SQLite to handle restarts
     db = get_db()
     save_active_job(db, job_id, normalized_url)
     
-    # Start the async pipeline task in the background
     asyncio.create_task(run_pipeline(job_id, normalized_url))
     return {"job_id": job_id}
 
@@ -322,7 +316,7 @@ async def chat_endpoint(req: ChatRequest):
     job = jobs.get(req.job_id)
     db = get_db()
     
-    # Recover job configurations automatically from SQLite if the server reloaded/restarted
+   
     if not job:
         db_job = get_active_job(db, req.job_id)
         if db_job:
@@ -345,7 +339,7 @@ async def chat_endpoint(req: ChatRequest):
     else:
         system_prompt = "You are a helpful assistant."
         
-    # Get or initialize history per job and per tenant (voice sandbox vs standard chat panel)
+
     if req.is_voice:
         history_key = "history_voice"
     else:
@@ -364,25 +358,22 @@ async def chat_endpoint(req: ChatRequest):
             full_response += chunk
             yield chunk
             
-        # Once complete, save both user message and final response to history!
         if job:
             job[history_key].append({"role": "user", "content": req.message})
             job[history_key].append({"role": "assistant", "content": full_response})
-            # Bound history to last 6 entries (3 full turns) to prevent context bloat
             job[history_key] = job[history_key][-6:]
             
     return StreamingResponse(chat_wrapper(), media_type="text/plain")
 
 def clean_for_speech(text: str) -> str:
     import re
-    # Strip markdown symbols, headers, citations, and brackets for synthetic reading
+   
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\*([^*]+)\*", r"\1", text)
     text = re.sub(r"\[Source:\s*[^\]]+\]", "", text)
     text = re.sub(r"#[#\s\w]+", "", text)
     text = re.sub(r"-\s+", "", text)
     text = text.replace("\n", " ")
-    # Replace multiple spaces with a single space
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -447,7 +438,6 @@ async def get_voice_response(message: str, system_prompt: str, site_url: str = N
             return "I am sorry, I had trouble connecting to my brain. Can you repeat that?"
             
     else:
-        # Mock response when no API keys are loaded
         await asyncio.sleep(0.6)
         if "pricing" in message.lower() or "cost" in message.lower() or "plans" in message.lower():
             return f"Regarding pricing, please consult the website for current plans. In our knowledge base for {site_url or 'the site'}, plans are listed. Can I help you with anything else?"
@@ -599,7 +589,7 @@ async def voice_tts(text: str, voice: str = "alloy"):
                 print(f"Edge-TTS API Error: {response.status_code} - {response.text}")
                 return Response(f"Edge-TTS API returned error: {response.status_code}", status_code=500)
             
-            # Return complete audio bytes as a standard HTTP response
+            
             return Response(content=response.content, media_type="audio/mpeg")
     except Exception as e:
         print(f"Connection error to Edge-TTS: {e}")
@@ -612,6 +602,57 @@ async def get_voice_status():
         "voice_active": is_active,
         "eleven_labs_active": is_active
     }
+
+@app.get("/livekit/token")
+async def get_livekit_token(job_id: str):
+    import os
+    from fastapi import HTTPException
+    
+    url = os.getenv("LIVEKIT_URL")
+    api_key = os.getenv("LIVEKIT_API_KEY")
+    api_secret = os.getenv("LIVEKIT_API_SECRET")
+    
+    if not url or not api_key or not api_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="LiveKit credentials are not fully configured in your backend/.env. Please verify LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET."
+        )
+        
+    try:
+        from livekit import api
+        
+        
+        token = api.AccessToken(api_key, api_secret) \
+            .with_identity(f"user-{uuid.uuid4().hex[:8]}") \
+            .with_name("Web Support Guest") \
+            .with_grants(api.VideoGrants(
+                room_join=True,
+                room=f"room-{job_id}"
+            ))
+            
+        
+        http_url = url.replace("ws://", "http://").replace("wss://", "https://")
+        lkapi = api.LiveKitAPI(http_url, api_key, api_secret)
+        try:
+            await lkapi.agent_dispatch.create_dispatch(
+                api.CreateAgentDispatchRequest(
+                    agent_name="siteintel-agent",
+                    room=f"room-{job_id}"
+                )
+            )
+            print(f"Successfully created explicit dispatch for agent 'siteintel-agent' in room 'room-{job_id}'")
+        except Exception as dispatch_err:
+            print(f"Non-fatal error creating explicit agent dispatch: {dispatch_err}")
+        finally:
+            await lkapi.aclose()
+            
+        return {
+            "token": token.to_jwt(),
+            "url": url
+        }
+    except Exception as e:
+        print(f"Error generating LiveKit token: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate LiveKit Token: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
