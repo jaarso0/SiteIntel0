@@ -1,8 +1,8 @@
 def audit(kb: dict, pages: list[dict]) -> dict:
-    # Check inconsistencies rated high
+    
     critical = [i for i in kb.get("inconsistencies", []) if i.get("severity") == "high"]
     
-    # Check high-priority gaps that have no matching KB article
+    
     kb_articles = kb.get("kb_articles", [])
     kb_categories = {a.get("category", "").lower() for a in kb_articles if a.get("category")}
     
@@ -11,7 +11,7 @@ def audit(kb: dict, pages: list[dict]) -> dict:
         if g.get("priority") == "high" and g.get("topic", "").lower() not in kb_categories
     ]
 
-    # Consolidate recrawl hints
+    
     recrawl_hints = []
     for i in critical:
         pages_list = i.get("pages", [])
@@ -25,7 +25,7 @@ def audit(kb: dict, pages: list[dict]) -> dict:
         if topic:
             recrawl_hints.append(topic)
 
-    # De-duplicate hints
+    
     recrawl_hints = list(set(recrawl_hints))
 
     return {

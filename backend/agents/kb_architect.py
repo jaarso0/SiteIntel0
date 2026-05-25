@@ -6,7 +6,6 @@ import google.generativeai as genai
 from google.api_core.exceptions import GoogleAPIError
 
 def clean_json_response(text: str) -> str:
-    # Remove markdown code blocks if present
     match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if match:
         return match.group(1).strip()
@@ -52,7 +51,7 @@ Return this exact structure:
   "competitor_gaps": [{{"topic":"","competitor_has_it":true}}]
 }}"""
 
-    # Retry loop with exponential backoff (1s -> 2s -> 4s -> 8s -> 16s)
+
     backoff = 1.0
     max_retries = 5
     for attempt in range(max_retries):
