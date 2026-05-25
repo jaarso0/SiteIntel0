@@ -5,8 +5,6 @@ _model = None
 def get_model():
     global _model
     if _model is None:
-        # Load the lightweight MiniLM model (approx 30MB)
-        # It runs completely locally with zero API cost!
         _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
 

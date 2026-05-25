@@ -19,7 +19,7 @@ def chunk_article(article: dict, site_url: str, chunk_size=500, overlap=50) -> l
             "category": article.get("category", ""),
             "chunk_index": len(chunks),
         })
-        # If we reached the end of the content
+        
         if i + chunk_size >= len(words):
             break
             
