@@ -3,7 +3,7 @@ def chunk_article(article: dict, site_url: str, chunk_size=500, overlap=50) -> l
     words = content.split()
     chunks = []
     
-    # Handle empty content
+
     if not words:
         return []
         
