@@ -613,6 +613,58 @@ async def get_voice_status():
         "eleven_labs_active": is_active
     }
 
+@app.get("/livekit/token")
+async def get_livekit_token(job_id: str):
+    import os
+    from fastapi import HTTPException
+    
+    url = os.getenv("LIVEKIT_URL")
+    api_key = os.getenv("LIVEKIT_API_KEY")
+    api_secret = os.getenv("LIVEKIT_API_SECRET")
+    
+    if not url or not api_key or not api_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="LiveKit credentials are not fully configured in your backend/.env. Please verify LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET."
+        )
+        
+    try:
+        from livekit import api
+        
+        # Generate token using livekit-api SDK
+        token = api.AccessToken(api_key, api_secret) \
+            .with_identity(f"user-{uuid.uuid4().hex[:8]}") \
+            .with_name("Web Support Guest") \
+            .with_grants(api.VideoGrants(
+                room_join=True,
+                room=f"room-{job_id}"
+            ))
+            
+        # Programmatically dispatch our named voice agent worker to the room
+        # LiveKitAPI requires http:// or https:// scheme for REST API requests
+        http_url = url.replace("ws://", "http://").replace("wss://", "https://")
+        lkapi = api.LiveKitAPI(http_url, api_key, api_secret)
+        try:
+            await lkapi.agent_dispatch.create_dispatch(
+                api.CreateAgentDispatchRequest(
+                    agent_name="siteintel-agent",
+                    room=f"room-{job_id}"
+                )
+            )
+            print(f"Successfully created explicit dispatch for agent 'siteintel-agent' in room 'room-{job_id}'")
+        except Exception as dispatch_err:
+            print(f"Non-fatal error creating explicit agent dispatch: {dispatch_err}")
+        finally:
+            await lkapi.aclose()
+            
+        return {
+            "token": token.to_jwt(),
+            "url": url
+        }
+    except Exception as e:
+        print(f"Error generating LiveKit token: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate LiveKit Token: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
