@@ -2,7 +2,7 @@
 
 **Paste a URL. Get a production-ready AI support agent in under 90 seconds.**
 
-SiteIntel crawls any website, builds a structured knowledge base in a single LLM call, and deploys both a streaming chat agent and a live WebRTC voice agent — all grounded in that site's actual content. No manual Q&A writing. No prompt engineering. No per-page API calls.
+SiteIntel crawls any website, builds a structured knowledge base in a single LLM call, and deploys both a streaming chat agent and a live WebRTC voice agent, all grounded in that site's actual content. No manual Q&A writing. No prompt engineering. No per-page API calls.
 
 ---
 
