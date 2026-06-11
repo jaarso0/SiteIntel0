@@ -6,6 +6,7 @@ import { KbViewer } from "./components/KbViewer";
 import { DeployHub } from "./components/DeployHub";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { LandingPage } from "./components/LandingPage";
+import { MissionControl } from "./components/MissionControl";
 
 
 const API_BASE = "http://localhost:8080";
@@ -17,7 +18,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [kb, setKb] = useState<any>(null);
-  const [viewMode, setViewMode] = useState<"chat" | "kb" | "deploy">("chat");
+  const [viewMode, setViewMode] = useState<"mission" | "chat" | "kb" | "deploy">("chat");
   const [submittedUrl, setSubmittedUrl] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -40,7 +41,7 @@ function App() {
         if (data.status === "ready") {
           setIsLoading(false);
           setKb(data.kb);
-          setViewMode("kb");
+          setViewMode("mission");
           clearInterval(interval);
         } else if (data.status === "failed") {
           setIsLoading(false);
@@ -115,6 +116,19 @@ function App() {
           {kb && (
             <div className="flex gap-6 h-full items-center">
               <button
+                onClick={() => setViewMode("mission")}
+                className={`h-full px-1 text-[13px] font-normal transition-all duration-150 cursor-pointer border-none bg-transparent flex items-center relative ${
+                  viewMode === "mission"
+                    ? "text-[#F0EDE8] font-semibold"
+                    : "text-[rgba(255,255,255,0.4)] hover:text-[#F0EDE8]"
+                }`}
+              >
+                <span>Mission Control</span>
+                {viewMode === "mission" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#00E5CC]"></span>
+                )}
+              </button>
+              <button
                 onClick={() => setViewMode("chat")}
                 className={`h-full px-1 text-[13px] font-normal transition-all duration-150 cursor-pointer border-none bg-transparent flex items-center relative ${
                   viewMode === "chat"
@@ -160,7 +174,7 @@ function App() {
           <div className="flex items-center gap-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] px-3 py-1 rounded-[20px]">
             <span className="w-2 h-2 rounded-full bg-[#00E5CC] animate-statusPulse"></span>
             <span className="text-[11px] text-[rgba(255,255,255,0.5)] font-sans font-normal">
-              Gemini 2.5 Flash
+              online
             </span>
           </div>
         </div>
@@ -177,7 +191,7 @@ function App() {
             progress={progress}
             onComplete={() => {
               setShowOnboarding(false);
-              setViewMode("chat");
+              setViewMode("mission");
             }}
           />
         ) : kb === null ? (
@@ -201,7 +215,16 @@ function App() {
             <ProgressBar status={status} progress={progress} error={error} />
 
             {/* Step 3: Single full-width active Chat Panel / Knowledge Base / Deploy Hub */}
-            {viewMode === "chat" ? (
+            {viewMode === "mission" ? (
+              <section className="flex-1 flex flex-col gap-6 mt-4 animate-fadeIn">
+                <MissionControl
+                  kb={kb}
+                  onOpenChat={() => setViewMode("chat")}
+                  onOpenKb={() => setViewMode("kb")}
+                  onOpenDeploy={() => setViewMode("deploy")}
+                />
+              </section>
+            ) : viewMode === "chat" ? (
               <section className="flex-1 flex flex-col gap-6 mt-4 animate-fadeIn">
                 <ChatPanel
                   jobId={jobId}

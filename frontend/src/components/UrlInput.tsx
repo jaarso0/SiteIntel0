@@ -47,7 +47,7 @@ export const UrlInput: React.FC<UrlInputProps> = ({
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste target website URL (e.g. https://www.stepsai.co)..."
+            placeholder="Paste target website URL (e.g. https://www.notion.com)..."
             disabled={isLoading}
             className="w-full h-full pl-10 pr-4 py-2 bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded-[12px] text-[14px] text-[#F0EDE8] placeholder-[rgba(255,255,255,0.25)] focus:outline-none focus:border-[rgba(123,94,167,0.6)] focus:ring-3 focus:ring-[rgba(123,94,167,0.12)] transition-all duration-150 disabled:cursor-not-allowed disabled:bg-transparent"
           />
