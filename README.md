@@ -2,7 +2,7 @@
 
 **Paste a URL. Get a production-ready AI support agent in under 90 seconds.**
 
-SiteIntel crawls any website, builds a structured knowledge base in a single LLM call, and deploys both a streaming chat agent and a live WebRTC voice agent, all grounded in that site's actual content. No manual Q&A writing. No prompt engineering. No per-page API calls.
+SiteIntel crawls any website, builds a structured knowledge base in a single LLM call, and deploys both a streaming chat agent and a live WebRTC voice agent — all grounded in that site's actual content. No manual Q&A writing. No prompt engineering. No per-page API calls.
 
 ---
 
@@ -16,26 +16,24 @@ Businesses that want an AI support agent face a painful manual process: copy-pas
 
 ## Demo
 
-
-
-
+> **[Watch Demo on YouTube / Google Drive](#)** ← *(replace with your link)*
 
 <table>
   <tr>
-    <td><img src="assets/1.png" width="450"/></td>
-    <td><img src="assets/2.png" width="450"/></td>
+    <td><img src="assets/1.png" width="250"/></td>
+    <td><img src="assets/2.png" width="250"/></td>
   </tr>
   <tr>
-    <td><img src="assets/3.png" width="450"/></td>
-    <td><img src="assets/4.png" width="450"/></td>
+    <td><img src="assets/3.png" width="250"/></td>
+    <td><img src="assets/4.png" width="250"/></td>
   </tr>
   <tr>
-    <td><img src="assets/5.png" width="450"/></td>
-    <td><img src="assets/6.png" width="450"/></td>
+    <td><img src="assets/5.png" width="250"/></td>
+    <td><img src="assets/6.png" width="250"/></td>
   </tr>
   <tr>
-    <td><img src="assets/7.png" width="450"/></td>
-    <td><img src="assets/8.png" width="450"/></td>
+    <td><img src="assets/7.png" width="250"/></td>
+    <td><img src="assets/8.png" width="250"/></td>
   </tr>
 </table>
 
@@ -71,7 +69,7 @@ User pastes URL
 ┌─────────────────────────────────────────────────────────┐
 │  RAG INDEX  (zero API cost)                             │
 │  • Overlapping 300-word chunks with source metadata     │
-│  • Local all-MiniLM-L6-v2 → 384-dim dense vectors      │
+│  • Local multilingual-e5-small → 384-dim vectors        │
 │  • Stored in embedded ChromaDB, deduplicated by SHA-256 │
 └─────────────────────────┬───────────────────────────────┘
                           │
@@ -95,13 +93,13 @@ Browser mic → WebRTC → LiveKit Server
                               ▼
                     ┌──────────────────┐
                     │  VAD (Silero)    │  150ms silence detection
-                    │  STT (Deepgram)  │  streaming, real-time
+                    │  STT (Sarvam)    │  saarika, streaming
                     │                  │
                     │  on_user_turn_completed():
                     │    ChromaDB search → inject as system msg
                     │                  │
-                    │  LLM (Groq)      │  Llama 3.3 70B, ~300ms
-                    │  TTS (Cartesia)  │  Sonic, low-latency
+                    │  LLM (Groq)      │  gpt-oss-120b, ~500ms
+                    │  TTS (Sarvam)    │  bulbul:v3, streaming
                     └──────────────────┘
                               │
                         audio stream → browser
@@ -112,7 +110,7 @@ RAG is injected via the `on_user_turn_completed` hook — not a function tool. T
 ### Chat Pipeline
 
 ```
-User message → ChromaDB top-5 retrieval → Groq streaming (Llama 3.3 70B)
+User message → ChromaDB top-5 retrieval → Groq streaming (gpt-oss-120b)
              ← token-by-token SSE stream ←
 ```
 
@@ -132,7 +130,7 @@ The voice agent runs as a separate worker process that connects to LiveKit and w
 Gemini 2.5 Flash has a 1M token context window. Rather than looping over pages and making N LLM calls, all crawled content is batched into a single structured prompt. This caps the build cost at 1–2 total LLM calls regardless of site size, which was the primary constraint on free-tier quota.
 
 **2. Local embeddings with no external API.**
-`all-MiniLM-L6-v2` runs locally via `sentence-transformers`. Every RAG query — both at chat time and inside the voice pipeline — is free and has no network latency. The model is pre-warmed in a background thread as soon as the voice agent connects to the room.
+`intfloat/multilingual-e5-small` runs locally via `sentence-transformers`, so Hindi and Hinglish questions match English site content. Each model gets its own Chroma collection; after changing `EMBED_MODEL`, run `python reindex.py` to re-embed existing chunks. Every RAG query — both at chat time and inside the voice pipeline — is free and has no network latency. The voice worker loads the model (and ChromaDB) in `prewarm` and keeps an idle process ready, so calls do not pay the ~20s model load.
 
 **3. RAG injected via `on_user_turn_completed`, not a function tool.**
 Function tools require the LLM to emit a structured call, which the TTS engine would read aloud verbatim before the actual answer. Using the `on_user_turn_completed` hook instead injects ChromaDB results as a system message before the LLM is invoked — one clean LLM call, nothing leaks into audio.
@@ -152,12 +150,12 @@ Page classification (pricing / support / product / skip) is pure regex against U
 | Backend API | FastAPI + Uvicorn | Async-native, ideal for streaming responses |
 | Crawling | HTTPX + Playwright + trafilatura | JS rendering fallback, clean content extraction |
 | KB Builder | Gemini 2.5 Flash (1M ctx) | Entire site fits in one prompt → 1 LLM call |
-| RAG Embeddings | sentence-transformers `all-MiniLM-L6-v2` | Local, zero cost, 384-dim, fast |
+| RAG Embeddings | sentence-transformers `intfloat/multilingual-e5-small` | Local, zero cost, multilingual (Hindi/Hinglish), 384-dim |
 | Vector Store | ChromaDB (embedded) | No external service, file-based persistence |
-| Chat LLM | Groq `llama-3.3-70b-versatile` | Sub-400ms streaming, separate quota from Gemini |
+| Chat LLM | Groq `openai/gpt-oss-120b` (override with `GROQ_MODEL`) | Sub-400ms streaming, separate quota from Gemini |
 | Voice Orchestration | LiveKit Agents v1.5.x | WebRTC, VAD, STT/LLM/TTS pipeline |
-| STT | Deepgram streaming | Real-time transcription, lower latency than Whisper |
-| TTS | Edge-TTS (local) / Cartesia fallback | Local server = zero TTS API cost |
+| STT | Sarvam `saarika:v2.5` streaming | Real-time transcription, Indian English + Indic languages |
+| TTS | Sarvam `bulbul:v3` streaming | Same provider and key as STT, natural Indian voices |
 | Persistence | SQLite | KB caching, job recovery across restarts |
 | Frontend | React + Vite + TypeScript | Lightweight SPA, no SSR overhead |
 
@@ -179,7 +177,7 @@ Page classification (pricing / support / product / skip) is pure regex against U
 
 **Voice Agent**
 - Browser-native WebRTC (LiveKit) — no phone required
-- Deepgram streaming STT → RAG → Groq LLM → Cartesia TTS
+- Sarvam streaming STT → RAG → Groq LLM → Sarvam streaming TTS
 - Greeting on connect, warm support agent persona derived from the site's KB
 - VAD tuned to 150ms silence detection for snappier turn-taking
 - False interruption detection with resume (`min_interruption_words=3`)
@@ -188,7 +186,7 @@ Page classification (pricing / support / product / skip) is pure regex against U
 **Infrastructure**
 - Job state recovers from SQLite on server restart — active conversations survive
 - All RAG operations are local — no external vector API, no per-query cost
-- Edge-TTS fallback if Cartesia is unavailable
+- Replies in English to English callers and in Hinglish to Hindi/Hinglish callers (voice switches between `en-IN` and `hi-IN`)
 
 ---
 
@@ -197,12 +195,11 @@ Page classification (pricing / support / product / skip) is pure regex against U
 | Service | Usage |
 |---|---|
 | **Gemini 2.5 Flash** | One-shot KB synthesis (1–2 calls per site) |
-| **Groq** (`llama-3.3-70b-versatile`) | Streaming chat + voice LLM |
-| **Deepgram** | Streaming STT in voice pipeline |
-| **Edge-TTS** (local server) | Primary TTS — zero API cost, runs on port 5050 |
-| **Cartesia Sonic** | TTS fallback if Edge-TTS server is offline |
+| **Groq** (`openai/gpt-oss-120b`) | Streaming chat + voice LLM |
+| **Sarvam AI** | Streaming STT + TTS in the LiveKit voice pipeline |
+| **Edge-TTS** (local server, optional) | TTS for the browser-native sandbox mode and Twilio line (`/voice/tts`) |
 | **LiveKit** | WebRTC signaling, agent dispatch, room management |
-| **sentence-transformers** | Local embeddings (`all-MiniLM-L6-v2`), zero API cost |
+| **sentence-transformers** | Local multilingual embeddings (`intfloat/multilingual-e5-small`), zero API cost |
 
 ---
 
@@ -213,7 +210,8 @@ Page classification (pricing / support / product / skip) is pure regex against U
 - Python 3.10+
 - Node.js 18+
 - [LiveKit server](https://github.com/livekit/livekit) running locally (Docker recommended)
-- [Edge-TTS server](https://github.com/travisvn/openai-edge-tts) running on port 5050 — primary TTS (Cartesia used as fallback if this is offline)
+- A [Sarvam AI](https://dashboard.sarvam.ai) API key — STT + TTS for the LiveKit voice agent
+- Optional: [Edge-TTS server](https://github.com/travisvn/openai-edge-tts) on port 5050 — only for the browser-native sandbox mode and Twilio line (falls back to browser/Polly voices if offline)
 
 ### 1. Clone & configure
 
@@ -283,21 +281,21 @@ Create `backend/.env` with the following:
 # Required — Knowledge Base builder
 GEMINI_API_KEY=your_gemini_api_key
 
-# Required — Chat LLM + Voice STT fallback
+# Required — Chat LLM + Voice LLM
 GROQ_API_KEY=your_groq_api_key
 
-# Required for voice — Streaming STT
-DEEPGRAM_API_KEY=your_deepgram_api_key
-
-# Optional — Cartesia TTS fallback (used only if Edge-TTS server is offline)
-CARTESIA_API_KEY=your_cartesia_api_key
+# Required for voice — Sarvam streaming STT + TTS
+SARVAM_API_KEY=your_sarvam_api_key
+# Optional — defaults shown
+SARVAM_STT_LANGUAGE=unknown  # auto-detect; replies are Hinglish for Hindi callers
+SARVAM_SPEAKER=shubh
 
 # LiveKit — use defaults below for local Docker setup
 LIVEKIT_URL=ws://localhost:7880
 LIVEKIT_API_KEY=devkey
 LIVEKIT_API_SECRET=secret
 
-# Optional — local Edge-TTS server (fallback TTS)
+# Optional — local Edge-TTS server (browser-native sandbox mode + Twilio line only)
 EDGE_TTS_URL=http://localhost:5050
 EDGE_TTS_API_KEY=mykey123
 ```
@@ -305,8 +303,7 @@ EDGE_TTS_API_KEY=mykey123
 **Free tiers that work:**
 - Gemini 2.5 Flash — 1M tokens/day free, more than enough (1–2 calls per site)
 - Groq — generous free tier, fast
-- Deepgram — $200 free credit on signup
-- Cartesia — free tier available
+- Sarvam AI — free credits on signup
 - LiveKit — self-hosted is free; LiveKit Cloud has a free tier
 
 ---
@@ -351,5 +348,3 @@ siteintel/
 | `GET` | `/livekit/token` | Generate room token + dispatch voice agent |
 | `GET` | `/voice/tts` | Proxy to local Edge-TTS, returns `audio/mpeg` |
 | `GET` | `/voice/status` | Check Edge-TTS availability |
-
-Built by Juveria Zaheer 
