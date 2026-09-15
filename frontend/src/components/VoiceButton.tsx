@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 
+const API_BASE = "http://localhost:8080";
+
 interface VoiceButtonProps {
   onSpeechDetected: (text: string) => void;
   textToSpeak: string | null;
@@ -15,7 +17,7 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   
   const recognitionRef = useRef<any>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     // Initialize Web Speech API Speech Recognition
@@ -30,8 +32,8 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
 
       rec.onstart = () => {
         setIsListening(true);
-        // Stop any active speech if starting to listen
-        window.speechSynthesis.cancel();
+        // Stop any active answer playback if starting to listen.
+        stopAudio();
         setIsSpeaking(false);
       };
 
@@ -61,46 +63,61 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
       speak(textToSpeak);
     }
     return () => {
-      window.speechSynthesis.cancel();
+      stopAudio();
     };
   }, [textToSpeak]);
 
-  const speak = (text: string) => {
-    window.speechSynthesis.cancel();
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
     setIsSpeaking(false);
+  };
+
+  const speak = (text: string) => {
+    stopAudio();
 
     if (!text) return;
 
-    // Clean up citations [Source: ...] for clean voice reading
-    const cleanText = text.replace(/\[Source:\s*[^\]]+\]/g, "").trim();
+    // Clean up citations and URLs so Edge TTS reads only the answer.
+    const cleanText = text
+      .replace(/\[Source:\s*[^\]]+\]/g, "")
+      .replace(/https?:\/\/\S+/g, "")
+      .trim();
     if (!cleanText) return;
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = 1.05; // Slightly faster for natural feel
-    utterance.pitch = 1.0;
-    
-    utterance.onstart = () => {
+    const audio = new Audio(`${API_BASE}/voice/tts?text=${encodeURIComponent(cleanText)}`);
+    audioRef.current = audio;
+
+    audio.onplay = () => {
       setIsSpeaking(true);
     };
 
-    utterance.onend = () => {
+    audio.onended = () => {
+      audioRef.current = null;
       setIsSpeaking(false);
     };
 
-    utterance.onerror = () => {
+    audio.onerror = () => {
+      audioRef.current = null;
       setIsSpeaking(false);
+      console.error("Edge TTS playback failed.");
     };
 
-    utteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    audio.play().catch((error) => {
+      audioRef.current = null;
+      setIsSpeaking(false);
+      console.error("Edge TTS playback was blocked or failed:", error);
+    });
   };
 
   const handleToggle = () => {
     if (isListening) {
       recognitionRef.current?.stop();
     } else if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
+      stopAudio();
     } else {
       if (recognitionRef.current) {
         try {

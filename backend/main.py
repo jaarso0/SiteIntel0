@@ -14,6 +14,8 @@ import httpx
 
 load_dotenv(override=True)
 
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
 from crawler.orchestrator import crawl_site, find_competitors, crawl_competitors
 from crawler.extractor import fetch_and_extract
 from crawler.classifier import classify
@@ -228,7 +230,7 @@ async def stream_chat(message: str, use_kb: bool, system_prompt: str, site_url: 
             messages.append({"role": "user", "content": message})
             
             stream = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=GROQ_MODEL,
                 messages=messages,
                 stream=True,
             )
@@ -408,7 +410,7 @@ async def get_voice_response(message: str, system_prompt: str, site_url: str = N
             response = await loop.run_in_executor(
                 None,
                 lambda: client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model=GROQ_MODEL,
                     messages=messages,
                     stream=False
                 )
