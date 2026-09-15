@@ -337,7 +337,11 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
           const audioElement = track.attach();
           audioElement.id = `track-${track.sid}`;
           audioElement.autoplay = true;
+<<<<<<< Updated upstream
           audioElement.setAttribute("playsinline", "true");
+=======
+          audioElement.playsInline = true;
+>>>>>>> Stashed changes
           document.body.appendChild(audioElement);
           audioElement.play().catch((err) => {
             console.error("Browser blocked LiveKit audio playback:", err);
