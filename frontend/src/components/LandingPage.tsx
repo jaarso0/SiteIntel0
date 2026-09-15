@@ -57,7 +57,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onCrawlStart, isLoadin
         </h1>
         <p className="text-sm md:text-base text-[rgba(255,255,255,0.45)] max-w-2xl mt-4 mx-auto leading-relaxed font-normal">
           Turn any website into a high-fidelity voice and chat support assistant in seconds. 
-          Crawl pages, synthesize structured local knowledge bases with Gemini 2.5 Flash, 
+          Crawl pages, synthesize structured local knowledge bases , 
           and deploy zero-hallucination support workflows.
         </p>
       </div>
@@ -76,18 +76,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onCrawlStart, isLoadin
         <div className="flex flex-wrap items-center justify-center gap-5 mt-4 text-[10px] font-mono text-[rgba(255,255,255,0.35)]">
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00E5CC]"></span>
-            <span>Gemini 2.5 Flash Online</span>
+            <span>LiveKit</span>
           </div>
           <span className="text-[rgba(255,255,255,0.1)]">|</span>
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#7B5EA7]"></span>
-            <span>Sentence-Transformers Ready</span>
+            <span>Playwright</span>
           </div>
           <span className="text-[rgba(255,255,255,0.1)]">|</span>
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00E5CC]"></span>
-            <span>Local ChromaDB DB Active</span>
+            <span>Voice AI</span>
           </div>
+        </div>
+      </div>
+
+      {/* Pre-Indexed Demo Sites */}
+      <div className="z-10 w-full max-w-[680px] mb-12 animate-fadeIn" style={{ animationDelay: "150ms" }}>
+        <h3 className="text-center font-mono text-[10px] font-semibold tracking-wider text-[rgba(255,255,255,0.4)] uppercase mb-3.5">
+          Select a pre-indexed site to test immediately:
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { name: "Prepairo AI", url: "https://prepairo.ai", desc: "Admissions Hub" },
+            { name: "StepsAI", url: "https://stepsai.co", desc: "Chat Widget Tool" },
+            { name: "Notion", url: "https://www.notion.com", desc: "Workspace Docs" },
+            { name: "Zoho", url: "https://www.zoho.com", desc: "SaaS CRM Platform" },
+          ].map((demo) => (
+            <button
+              key={demo.name}
+              onClick={() => onCrawlStart(demo.url)}
+              disabled={isLoading}
+              className="premium-btn text-left p-3.5 bg-[rgba(255,255,255,0.015)] border border-[rgba(255,255,255,0.06)] rounded-[12px] hover:border-[#7B5EA7]/40 hover:bg-[rgba(123,94,167,0.04)] transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="block text-[12px] font-bold text-[#F0EDE8]">{demo.name}</span>
+              <span className="block text-[9px] text-[rgba(255,255,255,0.35)] font-mono mt-0.5">{demo.desc}</span>
+            </button>
+          ))}
         </div>
       </div>
 

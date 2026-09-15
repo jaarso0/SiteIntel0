@@ -201,6 +201,22 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
     activeCallStateRef.current = callState;
   }, [callState]);
 
+  const isSpeakingRef = useRef(isSpeaking);
+  const isAiStreamingRef = useRef(isAiStreaming);
+  const isMutedRef = useRef(isMuted);
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  useEffect(() => {
+    isAiStreamingRef.current = isAiStreaming;
+  }, [isAiStreaming]);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
   // Handle call timer increments
   useEffect(() => {
     if (callState === "connected") {
@@ -260,6 +276,12 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
 
     rec.onend = () => {
       setIsListening(false);
+      // Auto-restart listening if call is active, and we are not speaking or streaming
+      if (activeCallStateRef.current === "connected" && !isSpeakingRef.current && !isAiStreamingRef.current && !isMutedRef.current) {
+        setTimeout(() => {
+          triggerListening();
+        }, 300);
+      }
     };
 
     rec.onerror = (e: any) => {
@@ -267,7 +289,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
       setIsListening(false);
       
       // Auto-recover speech recognition loop if still connected
-      if (activeCallStateRef.current === "connected" && !isSpeaking && !isAiStreaming) {
+      if (activeCallStateRef.current === "connected" && !isSpeakingRef.current && !isAiStreamingRef.current) {
         setTimeout(() => {
           triggerListening();
         }, 1000);
@@ -314,7 +336,16 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
         if (track.kind === Track.Kind.Audio) {
           const audioElement = track.attach();
           audioElement.id = `track-${track.sid}`;
+          audioElement.autoplay = true;
+          audioElement.setAttribute("playsinline", "true");
           document.body.appendChild(audioElement);
+          audioElement.play().catch((err) => {
+            console.error("Browser blocked LiveKit audio playback:", err);
+            setCaptions((prev) => [
+              ...prev,
+              { sender: "system", text: "Browser blocked audio playback. Click anywhere on the page and try again." },
+            ]);
+          });
           
           // Ring tone stops & connected timer starts only when the agent's voice track is received!
           setCallState("connected");
@@ -534,7 +565,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
 
   // Trigger microphone listener
   const triggerListening = () => {
-    if (activeCallStateRef.current !== "connected" || isMuted || isSpeaking || isAiStreaming) return;
+    if (activeCallStateRef.current !== "connected" || isMutedRef.current || isSpeakingRef.current || isAiStreamingRef.current) return;
 
     if (!recognitionRef.current) {
       initSpeechRecognition();
@@ -709,12 +740,12 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
                 <span className="text-[10px] uppercase font-semibold tracking-wider font-mono text-[rgba(255,255,255,0.3)]">Embed Snippet</span>
                 <button
                   onClick={() => handleCopy(widgetScript, "widget")}
-                  className="text-[10px] font-mono font-semibold text-[#7B5EA7] bg-transparent border-none cursor-pointer hover:underline"
+                  className="text-[10px] font-mono font-semibold text-[#A892EE] bg-transparent border-none cursor-pointer hover:underline"
                 >
                   {copiedText === "widget" ? "Copied" : "Copy Code"}
                 </button>
               </div>
-              <pre className="bg-[rgba(255,255,255,0.02)] p-4 rounded-b-[6px] border border-[rgba(255,255,255,0.07)] font-mono text-[10px] leading-relaxed text-[#7B5EA7] overflow-x-auto select-all max-h-[160px]">
+              <pre className="bg-[rgba(255,255,255,0.02)] p-4 rounded-b-[6px] border border-[rgba(255,255,255,0.07)] font-mono text-[10px] leading-relaxed text-[#00E5CC] overflow-x-auto select-all max-h-[160px]">
                 {widgetScript}
               </pre>
             </div>
@@ -753,7 +784,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
                 <span className="text-[rgba(255,255,255,0.3)] font-semibold">1. Webhook URL</span>
                 <button
                   onClick={() => handleCopy(twilioUrl, "twilio")}
-                  className="text-[#7B5EA7] hover:underline bg-transparent border-none cursor-pointer"
+                  className="text-[#A892EE] hover:underline bg-transparent border-none cursor-pointer"
                 >
                   {copiedText === "twilio" ? "Copied" : "Copy"}
                 </button>
@@ -762,7 +793,7 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
                 type="text"
                 readOnly
                 value={twilioUrl}
-                className="w-full bg-transparent border border-[rgba(255,255,255,0.1)] rounded-[6px] px-3 py-2 text-xs font-mono text-[#7B5EA7] select-all outline-none"
+                className="w-full bg-transparent border border-[rgba(255,255,255,0.1)] rounded-[6px] px-3 py-2 text-xs font-mono text-[#00E5CC] select-all outline-none"
               />
             </div>
 
@@ -984,11 +1015,10 @@ export const DeployHub: React.FC<DeployHubProps> = ({ kb, jobId }) => {
                     return (
                       <div
                         key={i}
-                        className={`w-1 rounded-full transition-all duration-300 ${barColorClass}`}
+                        className={`w-1 rounded-full transition-all duration-300 origin-center ${barColorClass}`}
                         style={{
-                          height: (isSpeaking || isListening || isAiStreaming) 
-                            ? `${baseHeight}px` 
-                            : "6px",
+                          height: `${baseHeight}px`,
+                          transform: (isSpeaking || isListening || isAiStreaming) ? "none" : "scaleY(0.12)",
                           animation: (isSpeaking || isListening || isAiStreaming)
                             ? `voiceWave ${duration} ease-in-out infinite`
                             : "none",
